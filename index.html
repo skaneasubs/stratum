@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>STRATUM</title>
+<meta name="theme-color" content="#c8833a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="STRATUM">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700&family=Barlow+Condensed:wght@300;400;500;600;700&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg0: #0e0f0c; --bg1: #141510; --bg2: #1c1d18; --bg3: #252620;
+    --border: #2e3028; --borderHot: #8a7a3a;
+    --copper: #c8833a; --copperLight: #e8a855; --copperDim: #6b4820;
+    --text0: #f0ede6; --text1: #b8b4a8; --text2: #6e6b60;
+    --green: #4a8a52; --blue: #3a6a9a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg0); color: var(--text0); font-family: 'Barlow', sans-serif; min-height: 100vh; }
+  body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 32px 20px; }
+  .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+  .brand-strip { width: 4px; height: 48px; background: linear-gradient(to bottom, var(--copper), var(--copperDim)); }
+  .brand h1 { font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.14em; font-weight: 700; font-size: 26px; color: var(--text0); margin: 0; line-height: 1; }
+  .brand .sub { font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.10em; color: var(--text2); font-size: 11px; margin-top: 4px; display: block; }
+  .tagline { font-family: 'Barlow', sans-serif; color: var(--text1); font-size: 14px; line-height: 1.5; margin-bottom: 32px; max-width: 540px; }
+  .apps { display: grid; gap: 14px; }
+  .app-card { display: block; background: var(--bg2); border: 1px solid var(--border); border-left: 3px solid var(--copper); border-radius: 0 6px 6px 0; padding: 22px 24px; color: var(--text0); text-decoration: none; transition: all 0.15s; min-height: 96px; }
+  .app-card:hover, .app-card:active { background: var(--bg3); border-left-color: var(--copperLight); }
+  .app-card .icon { font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.12em; color: var(--copperLight); font-size: 11px; font-weight: 600; }
+  .app-card h2 { font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; font-size: 20px; margin: 4px 0 6px; color: var(--text0); }
+  .app-card p { font-family: 'Barlow', sans-serif; color: var(--text1); font-size: 13px; line-height: 1.45; margin: 0; }
+  .app-card .pill { display: inline-block; margin-top: 10px; padding: 3px 8px; background: var(--copperDim); border: 1px solid var(--copper); color: var(--text0); border-radius: 3px; font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; font-weight: 600; }
+  footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-family: 'Barlow', sans-serif; color: var(--text2); font-size: 11px; text-align: center; }
+  footer a { color: var(--text1); text-decoration: none; }
+  /* Mobile */
+  @media (max-width: 480px) {
+    .wrap { padding: 20px 14px; }
+    .brand h1 { font-size: 22px; }
+    .app-card { padding: 18px 18px; }
+    .app-card h2 { font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="brand">
+    <div class="brand-strip"></div>
+    <div>
+      <h1>STRATUM</h1>
+      <span class="sub">ASUBS · Capital Estimation Suite</span>
+    </div>
+  </div>
+
+  <div class="tagline">Mining civil estimation, value management and benchmarking. Closed-loop from portfolio to actuals.</div>
+
+  <div class="apps">
+
+    <a href="ProductionSupe.html" class="app-card">
+      <span class="icon">⛰ App 1</span>
+      <h2>Production Superintendent</h2>
+      <p>Per-shift fleet planning, bottleneck analysis, optimisation, and site inspection. Tap-through stopwatch for time-in-motion. Captures planned-vs-actual to feed the moat.</p>
+      <span class="pill">Open</span>
+    </a>
+
+    <a href="PitBoss.html" class="app-card">
+      <span class="icon">◈ App 2</span>
+      <h2>Pit Boss</h2>
+      <p>Pit-wide view across multiple supervisors and cost codes. Trends over time, plan-vs-actual reconciliation, HELP report (Highlights / Lowlights / Emerging / Priorities / How to help).</p>
+      <span class="pill">Open</span>
+    </a>
+
+    <a href="BOQEstimator.html" class="app-card">
+      <span class="icon">📄 App 3</span>
+      <h2>BOQ Estimator</h2>
+      <p>Top-down + bottom-up estimating with rate library, condition modifiers, Baseline-vs-Improved (VM workshop mode), and WBS multi-level. Preloaded with the Schammer Creek Diversion example.</p>
+      <span class="pill">Open</span>
+    </a>
+
+  </div>
+
+  <footer>STRATUM v1.6.4 · <a href="https://www.asubs.com.au">ASUBS Pty Ltd</a> · Local data stored in browser</footer>
+
+</div>
+</body>
+</html>
