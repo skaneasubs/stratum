@@ -871,6 +871,112 @@
 
 <script>
 // =============================================================
+// CLOUD SYNC — Supabase backend (added v1.7)
+// =============================================================
+const STRATUM_CLOUD = {
+  url:  'https://mpqnqycsgbyvcbkihbvn.supabase.co',
+  key:  'sb_publishable_nKbDn2tPXmSVpLVhFFac6w_Jz9xdknl',
+  status: 'idle',
+  lastSyncAt: null,
+  lastError: null,
+};
+
+function getSupervisorId() {
+  let id = localStorage.getItem('stratum_supervisor_id');
+  if (!id) {
+    id = 'sup_' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+    localStorage.setItem('stratum_supervisor_id', id);
+  }
+  return id;
+}
+function getSupervisorName() {
+  return localStorage.getItem('stratum_supervisor_name') || getSupervisorId();
+}
+function setSupervisorName(name) {
+  if (name && name.trim()) localStorage.setItem('stratum_supervisor_name', name.trim());
+}
+
+async function pushSessionToCloud(session) {
+  STRATUM_CLOUD.status = 'syncing'; updateSyncBadge();
+  const sup = getSupervisorName();
+  const shiftDate = (session.date_iso || session.inputs && session.inputs.date_iso || new Date().toISOString().slice(0,10));
+  const shiftType = (session.inputs && session.inputs.shift || 'day').toLowerCase().startsWith('n') ? 'night' : 'day';
+  const matQ = (session.inputs && session.inputs.quality || 'medium').toLowerCase();
+  const matQNorm = matQ.startsWith('l') ? 'low' : matQ.startsWith('h') ? 'high' : 'medium';
+  const inp = session.inputs || {};
+  const pred = session.predicted || {};
+  const body = {
+    supervisor_id: sup,
+    device_id:     getSupervisorId(),
+    shift_date:    shiftDate,
+    shift_type:    shiftType,
+    cost_code:     inp.cost_code || null,
+    activity_type: inp.activity || null,
+    material_quality: matQNorm,
+    weather:       session.weather || inp.weather || null,
+    planned_smu:   inp.planned_smu != null ? inp.planned_smu : (inp.shift_hrs != null ? inp.shift_hrs : null),
+    material_type: inp.material || null,
+    density_a:     inp.density != null ? inp.density : null,
+    swell_b:       inp.swell != null ? inp.swell : null,
+    rehandle_pct:  inp.rehandle != null ? inp.rehandle : 0,
+    dig_unit:      inp.excavator || null,
+    dig_condition: inp.dig_condition || null,
+    bucket_fill:   inp.fill_factor != null ? inp.fill_factor : null,
+    truck_class:   inp.truck_class || null,
+    truck_count:   inp.truck_count != null ? inp.truck_count : null,
+    target_bcm_shift:    pred.production_bcm != null ? pred.production_bcm : null,
+    target_cost_per_bcm: pred.cost_per_bcm_visible != null ? pred.cost_per_bcm_visible : null,
+    bottleneck:    pred.bottleneck || null,
+    actual_bcm_shift:    session.actual && session.actual.production_bcm != null ? session.actual.production_bcm : null,
+    actual_cost_per_bcm: session.actual && session.actual.cost ? (session.actual.cost / (session.actual.production_bcm || 1)) : null,
+    raw_json:      session,
+  };
+  try {
+    const r = await fetch(STRATUM_CLOUD.url + '/rest/v1/sessions', {
+      method: 'POST',
+      headers: {
+        'apikey': STRATUM_CLOUD.key,
+        'Authorization': 'Bearer ' + STRATUM_CLOUD.key,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + (await r.text()).slice(0, 200));
+    STRATUM_CLOUD.status = 'synced';
+    STRATUM_CLOUD.lastSyncAt = new Date();
+    STRATUM_CLOUD.lastError = null;
+  } catch (e) {
+    STRATUM_CLOUD.status = 'error';
+    STRATUM_CLOUD.lastError = String(e.message || e);
+    console.warn('[stratum cloud] sync failed:', e);
+  }
+  updateSyncBadge();
+}
+
+function updateSyncBadge() {
+  const el = document.getElementById('cloud-status');
+  if (!el) return;
+  const sup = getSupervisorName();
+  const supLabel = sup.startsWith('sup_')
+    ? '<a href="#" onclick="promptSupervisorName();return false;" style="color:var(--copperLight);text-decoration:underline">set your name</a>'
+    : sup;
+  const states = {
+    idle:    {dot:'●', col:'var(--text2)',    txt:'cloud ready'},
+    syncing: {dot:'◌', col:'var(--copperLight)', txt:'syncing…'},
+    synced:  {dot:'✓', col:'var(--green)',    txt:'synced ' + (STRATUM_CLOUD.lastSyncAt ? STRATUM_CLOUD.lastSyncAt.toLocaleTimeString() : '')},
+    error:   {dot:'⚠', col:'#d8534a',         txt:'sync error — saved locally'},
+  };
+  const s = states[STRATUM_CLOUD.status] || states.idle;
+  el.innerHTML = '<span style="color:' + s.col + ';font-weight:600">' + s.dot + '</span> ' + s.txt + ' · ' + supLabel;
+}
+
+function promptSupervisorName() {
+  const cur = localStorage.getItem('stratum_supervisor_name') || '';
+  const v = prompt('Your name (e.g. Stevie K) — tags your shift sessions in Pit Boss:', cur);
+  if (v) { setSupervisorName(v); updateSyncBadge(); }
+}
+// =============================================================
 // FLEET DATA — LHEX-calibrated where possible (PC4000-class 6040)
 // SEM contract rates from 2026.05 May Tracker v4 Data Tab
 // =============================================================
@@ -2974,6 +3080,7 @@ function commitSave() {
   toast(`Session saved — ${sessions.length} total`);
   closeSaveModal();
   updateSessionStatus();
+  pushSessionToCloud(session);  // v1.7 — fire-and-forget cloud push
 }
 
 function updateSessionStatus() {

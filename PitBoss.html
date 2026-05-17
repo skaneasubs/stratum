@@ -1,0 +1,1422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Pit Boss · STRATUM</title>
+<meta name="theme-color" content="#c8833a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pit Boss">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700&family=Barlow+Condensed:wght@300;400;500;600;700&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg0: #0e0f0c; --bg1: #141510; --bg2: #1c1d18; --bg3: #252620;
+    --border: #2e3028; --borderHot: #8a7a3a;
+    --copper: #c8833a; --copperLight: #e8a855; --copperDim: #6b4820;
+    --ochre: #d4a843;
+    --text0: #f0ede6; --text1: #b8b4a8; --text2: #6e6b60; --text3: #3e3d36;
+    --red: #c0402a; --green: #4a8a52; --blue: #3a6a9a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg0); color: var(--text0);
+    font-family: 'Barlow', sans-serif;
+    font-size: 14px; line-height: 1.4; min-height: 100vh;
+  }
+  .mono { font-family: 'DM Mono', monospace; font-feature-settings: 'tnum'; }
+  .label { font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500; color: var(--text1); font-size: 11px; }
+  /* HEADER */
+  header {
+    background: var(--bg1); border-bottom: 1px solid var(--border);
+    padding: 14px 24px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 10;
+  }
+  .brand { display: flex; align-items: center; gap: 16px; }
+  .brand-strip { width: 3px; height: 32px; background: linear-gradient(to bottom, var(--copper), var(--copperDim)); }
+  .brand-title { font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600; font-size: 16px; color: var(--text0); }
+  .brand-sub { font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.10em; color: var(--text2); font-size: 11px; margin-left: 8px; }
+  .header-actions { display: flex; gap: 8px; align-items: center; }
+  button {
+    background: var(--bg2); color: var(--text0);
+    border: 1px solid var(--border); padding: 6px 14px;
+    font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.08em;
+    font-size: 11px; font-weight: 500; cursor: pointer;
+    border-radius: 3px; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--borderHot); color: var(--copperLight); }
+  button.primary { background: var(--copperDim); border-color: var(--copper); color: var(--text0); }
+  button.primary:hover { background: var(--copper); color: var(--bg0); }
+  input[type="text"], input[type="number"], input[type="date"], select {
+    background: var(--bg3); border: 1px solid var(--border); color: var(--text0);
+    font-family: 'DM Mono', monospace; font-size: 13px; padding: 5px 10px;
+    border-radius: 3px; outline: none;
+  }
+  input[type="file"] { display: none; }
+  .file-label {
+    background: var(--bg2); border: 1px solid var(--border); padding: 6px 14px;
+    font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.08em;
+    font-size: 11px; font-weight: 500; cursor: pointer; border-radius: 3px;
+  }
+  .file-label:hover { border-color: var(--borderHot); color: var(--copperLight); }
+  /* LAYOUT */
+  .container { padding: 24px; max-width: 1600px; margin: 0 auto; }
+  .empty-state {
+    text-align: center; padding: 60px 20px;
+    background: var(--bg1); border: 1px dashed var(--border); border-radius: 4px;
+  }
+  .empty-state h2 { font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.10em; color: var(--text1); font-weight: 600; font-size: 18px; margin-bottom: 12px; }
+  .empty-state p { color: var(--text2); margin-bottom: 16px; max-width: 540px; margin-left: auto; margin-right: auto; font-size: 13px; }
+  /* OVERVIEW STRIP */
+  .overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 24px; }
+  .ov-tile { background: var(--bg2); border: 1px solid var(--border); border-left: 3px solid var(--copper); padding: 14px 16px; border-radius: 0 4px 4px 0; }
+  .ov-label { font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; color: var(--text2); margin-bottom: 4px; }
+  .ov-value { font-family: 'DM Mono', monospace; font-size: 22px; color: var(--copperLight); font-weight: 500; line-height: 1.0; }
+  .ov-detail { font-family: 'Barlow', sans-serif; color: var(--text1); font-size: 11px; margin-top: 4px; }
+  /* SECTION */
+  .section { background: var(--bg1); border: 1px solid var(--border); border-left: 3px solid var(--copper); border-radius: 0 4px 4px 0; padding: 16px 20px; margin-bottom: 16px; }
+  .section-title { font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.10em; font-weight: 600; font-size: 14px; color: var(--text0); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: baseline; }
+  .section-sub { font-family: 'Barlow', sans-serif; color: var(--text2); font-size: 11px; font-weight: 400; }
+  /* OPERATIONS TABLE */
+  .ops-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .ops-table th { text-align: left; font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; color: var(--text2); font-weight: 500; padding: 8px; border-bottom: 1px solid var(--border); }
+  .ops-table td { padding: 10px 8px; border-bottom: 1px solid var(--border); font-family: 'DM Mono', monospace; color: var(--text0); vertical-align: top; }
+  .ops-table td.label-cell { font-family: 'Barlow', sans-serif; color: var(--text0); }
+  .ops-table td.cost { color: var(--copperLight); }
+  .ops-table tr:last-child td { border-bottom: none; }
+  .ops-table tr:hover { background: var(--bg2); }
+  .bottleneck-chip { display: inline-block; padding: 3px 8px; border-radius: 3px; font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; font-weight: 600; }
+  .b-balanced { background: rgba(74, 138, 82, 0.18); color: var(--green); border: 1px solid var(--green); }
+  .b-dig { background: rgba(212, 168, 67, 0.15); color: var(--ochre); border: 1px solid var(--ochre); }
+  .b-truck { background: rgba(192, 64, 42, 0.15); color: var(--red); border: 1px solid var(--red); }
+  .b-dump { background: rgba(212, 168, 67, 0.15); color: var(--ochre); border: 1px solid var(--ochre); }
+  .match-bar { width: 80px; height: 6px; background: var(--bg3); border: 1px solid var(--border); position: relative; border-radius: 2px; display: inline-block; vertical-align: middle; margin-left: 6px; }
+  .match-fill { height: 100%; background: var(--copper); }
+  .match-fill.ok { background: var(--green); }
+  .match-fill.warn { background: var(--ochre); }
+  .match-fill.alert { background: var(--red); }
+  /* BOTTLENECK DISTRIBUTION BAR */
+  .dist-bar { display: flex; width: 100%; height: 32px; border: 1px solid var(--border); background: var(--bg3); overflow: hidden; border-radius: 3px; }
+  .dist-seg { height: 100%; display: flex; align-items: center; justify-content: center; font-family: 'DM Mono', monospace; font-size: 11px; color: var(--bg0); font-weight: 600; }
+  .dist-balanced { background: var(--green); }
+  .dist-dig { background: var(--ochre); }
+  .dist-truck { background: var(--red); }
+  .dist-dump { background: var(--copper); }
+  .dist-legend { display: flex; gap: 16px; margin-top: 10px; font-size: 11px; }
+  .dist-legend .item { display: flex; align-items: center; gap: 6px; font-family: 'Barlow', sans-serif; color: var(--text1); }
+  .dist-legend .swatch { width: 10px; height: 10px; display: inline-block; }
+  /* FLEET ALLOCATION */
+  .fleet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+  .fleet-cell { background: var(--bg2); border: 1px solid var(--border); border-left: 2px solid var(--copperDim); padding: 8px 12px; border-radius: 0 3px 3px 0; }
+  .fleet-cell .fc-label { font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; color: var(--text2); }
+  .fleet-cell .fc-value { font-family: 'DM Mono', monospace; font-size: 16px; color: var(--text0); }
+  .fleet-cell .fc-detail { font-family: 'Barlow', sans-serif; color: var(--text2); font-size: 10px; }
+  /* HELP REPORT */
+  .help-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 900px) { .help-grid { grid-template-columns: 1fr; } }
+  .help-card { background: var(--bg2); border: 1px solid var(--border); padding: 14px 18px; border-radius: 0 4px 4px 0; }
+  .help-card.h { border-left: 3px solid var(--green); }
+  .help-card.l { border-left: 3px solid var(--red); }
+  .help-card.e { border-left: 3px solid var(--ochre); }
+  .help-card.p { border-left: 3px solid var(--copper); }
+  .help-card.help { border-left: 3px solid var(--blue); }
+  .help-card-title { font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.10em; font-weight: 600; font-size: 13px; margin-bottom: 10px; display: flex; align-items: baseline; justify-content: space-between; }
+  .help-card.h .help-card-title { color: var(--green); }
+  .help-card.l .help-card-title { color: var(--red); }
+  .help-card.e .help-card-title { color: var(--ochre); }
+  .help-card.p .help-card-title { color: var(--copper); }
+  .help-card.help .help-card-title { color: var(--blue); }
+  .help-card-sub { font-family: 'Barlow', sans-serif; color: var(--text2); font-size: 11px; font-weight: 400; }
+  .help-list { list-style: none; padding: 0; margin: 0; font-family: 'Barlow', sans-serif; font-size: 13px; color: var(--text0); }
+  .help-list li { padding: 6px 0 6px 18px; position: relative; border-bottom: 1px dashed var(--border); line-height: 1.45; }
+  .help-list li:last-child { border-bottom: none; }
+  .help-list li::before { content: "▸"; position: absolute; left: 0; color: var(--copperDim); }
+  .help-card.h .help-list li::before { color: var(--green); }
+  .help-card.l .help-list li::before { color: var(--red); }
+  .help-card.e .help-list li::before { color: var(--ochre); }
+  .help-card.p .help-list li::before { color: var(--copper); }
+  .help-card.help .help-list li::before { color: var(--blue); }
+  .help-list li strong { color: var(--text0); }
+  .help-empty { font-family: 'Barlow', sans-serif; color: var(--text2); font-size: 12px; padding: 6px 0; font-style: italic; }
+  /* TAB STRIP */
+  .view-tabs { display: flex; gap: 0; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
+  .view-tab { padding: 9px 18px; font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.10em; font-size: 12px; font-weight: 600; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+  .view-tab:hover { color: var(--text1); }
+  .view-tab.active { color: var(--copperLight); border-bottom-color: var(--copper); }
+  /* OPPORTUNITY ALERT */
+  .alert-box { background: var(--bg2); border: 1px solid var(--ochre); border-left: 3px solid var(--ochre); padding: 12px 16px; margin-bottom: 12px; border-radius: 0 4px 4px 0; font-size: 13px; }
+  .alert-box .alert-title { font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; color: var(--ochre); font-size: 11px; margin-bottom: 4px; }
+  .alert-box .alert-text { color: var(--text0); }
+  /* TOAST */
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--bg2); border: 1px solid var(--copper); border-left: 3px solid var(--copper); padding: 12px 18px; font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.06em; font-size: 12px; color: var(--text0); border-radius: 0 4px 4px 0; opacity: 0; transform: translateY(10px); transition: all 0.2s; pointer-events: none; z-index: 100; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-strip"></div>
+    <div>
+      <span class="brand-title">Pit Boss</span>
+    </div>
+  </div>
+  <div class="header-actions">
+    <label class="file-label" for="csv-input">Load Sessions CSV</label>
+    <input type="file" id="csv-input" accept=".csv"/>
+    <label class="file-label" for="tracker-input" title="Load tracker CSV with actuals">Load Tracker</label>
+    <input type="file" id="tracker-input" accept=".csv"/>
+    <button id="btn-try-storage">Browser Storage</button>
+    <button id="btn-cloud" class="primary" style="background:#4a8a52;border-color:#4a8a52">☁ Load from Cloud</button>
+    <input type="date" id="filter-date"/>
+    <button id="btn-clear" class="primary">Clear</button>
+  </div>
+</header>
+
+<div class="container" id="container">
+  <!-- populated by render() -->
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// =============================================================
+// STATE — sessions loaded from CSV or localStorage
+// =============================================================
+
+const STATE = {
+  sessions: [],          // planned sessions from Production Supe
+  actuals: [],           // tracker actuals
+  filter_date: null,     // ISO date string or null = show all
+  source: null,          // 'csv' or 'localStorage'
+  view: 'day'            // 'day' or 'report'
+};
+
+// =============================================================
+// HELPERS
+// =============================================================
+
+function fmt(n, dp = 0) {
+  if (n === '' || n === null || n === undefined) return '—';
+  const v = parseFloat(n);
+  if (!isFinite(v) || isNaN(v)) return '—';
+  return v.toLocaleString('en-AU', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+}
+function fmtMoney(n, dp = 2) {
+  if (n === '' || n === null || n === undefined) return '—';
+  const v = parseFloat(n);
+  if (!isFinite(v) || isNaN(v)) return '—';
+  return '$' + fmt(v, dp);
+}
+function bottleneckLabel(b) { return { truck: 'TRUCK', dig: 'DIG', dump: 'DUMP', balanced: 'BALANCED' }[b] || (b || '—').toUpperCase(); }
+function bottleneckClass(b) { return 'b-' + (b || 'balanced'); }
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+// =============================================================
+// CSV PARSING — handles quoted fields
+// =============================================================
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.length > 0);
+  if (lines.length < 2) return [];
+  const headers = parseCSVLine(lines[0]);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const fields = parseCSVLine(lines[i]);
+    if (fields.length === 0) continue;
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = fields[idx] ?? ''; });
+    rows.push(obj);
+  }
+  return rows;
+}
+function parseCSVLine(line) {
+  const result = [];
+  let cur = '';
+  let inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQuote) {
+      if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (c === '"') { inQuote = false; }
+      else { cur += c; }
+    } else {
+      if (c === ',') { result.push(cur); cur = ''; }
+      else if (c === '"') { inQuote = true; }
+      else { cur += c; }
+    }
+  }
+  result.push(cur);
+  return result;
+}
+
+// =============================================================
+// LOAD DATA
+// =============================================================
+
+// Find a column value by trying several common header variants (case-insensitive).
+function colVal(row, ...candidates) {
+  const keys = Object.keys(row);
+  for (const cand of candidates) {
+    const candL = cand.toLowerCase().replace(/[_\s-]/g, '');
+    for (const k of keys) {
+      const kL = k.toLowerCase().replace(/[_\s-]/g, '');
+      if (kL === candL && row[k] !== '' && row[k] !== null && row[k] !== undefined) return row[k];
+    }
+  }
+  return '';
+}
+
+function loadTrackerCSV(text) {
+  const rows = parseCSV(text);
+  if (rows.length === 0) { toast('Empty tracker CSV'); return; }
+  STATE.actuals = rows.map(r => {
+    // Forgiving column mapping — supports tracker exports + simple custom format
+    const dateRaw = colVal(r, 'date', 'shift_date', 'shift date');
+    let date = dateRaw;
+    // Normalise common date formats to ISO
+    if (date && date.includes('/')) {
+      const parts = date.split('/');
+      if (parts.length === 3 && parts[2].length === 4) {
+        date = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+    if (date && date.length > 10) date = date.slice(0, 10);  // strip timestamps
+    return {
+      date,
+      cost_code: colVal(r, 'cost_code', 'cost code', 'job', 'job_id', 'activity_code', 'job_description'),
+      actual_bcm: parseFloat(colVal(r, 'actual_bcm', 'bcm', 'production', 'production_bcm', 'actual_production', 'volume', 'volume_bcm')) || 0,
+      actual_cost: parseFloat(colVal(r, 'actual_cost', 'cost', 'total_cost', 'cost_aud')) || 0,
+      hours_worked: parseFloat(colVal(r, 'hours_worked', 'hours', 'smu_actual', 'actual_smu', 'smu')) || 0,
+      weather: colVal(r, 'weather', 'weather_actual'),
+      dig_conditions: colVal(r, 'dig_conditions', 'dig conditions', 'conditions'),
+      notes: colVal(r, 'notes', 'comments', 'remarks')
+    };
+  }).filter(a => a.date && a.cost_code);
+  toast(`Loaded ${STATE.actuals.length} actuals row${STATE.actuals.length === 1 ? '' : 's'} from tracker`);
+  render();
+}
+
+// Match planned session(s) to actual(s) by date + cost_code (fuzzy on whitespace/case).
+function normaliseCostCode(s) {
+  return (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+function findActualFor(session) {
+  if (STATE.actuals.length === 0) return null;
+  const sCode = normaliseCostCode(session.cost_code);
+  // Exact date + cost code match preferred
+  let m = STATE.actuals.find(a => a.date === session.date && normaliseCostCode(a.cost_code) === sCode);
+  if (m) return m;
+  // Loose: contains either way
+  m = STATE.actuals.find(a => a.date === session.date && (
+    normaliseCostCode(a.cost_code).includes(sCode) || sCode.includes(normaliseCostCode(a.cost_code))
+  ));
+  return m || null;
+}
+
+function loadFromCSV(text) {
+  const rows = parseCSV(text);
+  STATE.sessions = rows.map(r => ({
+    id: r.session_id,
+    timestamp: r.timestamp,
+    version: r.version,
+    date: r.date || (r.timestamp ? r.timestamp.slice(0, 10) : ''),
+    weather: r.weather || '',
+    cost_code: r.cost_code || '',
+    activity: r.activity || '',
+    shift: r.shift || '',
+    excavator: r.excavator,
+    exc_class: r.exc_class,
+    truck_class: r.truck_class,
+    truck_count: parseInt(r.truck_count) || 0,
+    material: r.material,
+    planned_smu: parseFloat(r.planned_smu) || 0,
+    distance_km: parseFloat(r.distance_km) || 0,
+    bottleneck: r.predicted_bottleneck,
+    match_factor: parseFloat(r.predicted_match_factor) || 0,
+    trucks_needed: parseFloat(r.predicted_trucks_needed) || 0,
+    production_bcm: parseFloat(r.predicted_production_bcm) || 0,
+    bcm_per_smu: parseFloat(r.predicted_bcm_per_smu) || 0,
+    cost_per_bcm: parseFloat(r.predicted_cost_per_bcm) || 0,
+    cost_per_bcm_primary: parseFloat(r.predicted_cost_per_bcm_primary) || 0,
+    total_cost: parseFloat(r.predicted_total_cost_full) || parseFloat(r.predicted_total_cost_working) || 0,
+    cost_primary: parseFloat(r.predicted_cost_primary) || 0,
+    cost_ancillaries: parseFloat(r.predicted_cost_ancillaries) || 0,
+    cost_labour: parseFloat(r.predicted_cost_labour) || 0,
+    cost_fuel: parseFloat(r.predicted_cost_fuel) || 0,
+    fuel_L: parseFloat(r.predicted_fuel_L) || 0,
+    passes: parseInt(r.predicted_passes) || 0,
+    payload_bcm: parseFloat(r.predicted_payload_bcm) || 0,
+    loads_per_truck: parseFloat(r.predicted_loads_per_truck) || 0,
+    Z: parseFloat(r.predicted_Z) || 0,
+    BB: parseFloat(r.predicted_BB) || 0,
+    DD: parseFloat(r.predicted_DD) || 0,
+    actual_bcm: parseFloat(r.actual_production_bcm) || null,
+    actual_cost: parseFloat(r.actual_cost) || null,
+    loss_reasons: (r.opportunity_loss_reasons || '').split(';').filter(Boolean),
+    notes: r.notes || ''
+  })).filter(s => s.cost_code || s.production_bcm > 0);
+  STATE.source = 'csv';
+  // Default filter to latest date in the data
+  const dates = [...new Set(STATE.sessions.map(s => s.date).filter(Boolean))].sort();
+  STATE.filter_date = dates[dates.length - 1] || null;
+  const dateEl = document.getElementById('filter-date');
+  if (STATE.filter_date) dateEl.value = STATE.filter_date;
+  render();
+  toast(`Loaded ${STATE.sessions.length} sessions from CSV`);
+}
+
+function loadFromLocalStorage() {
+  try {
+    const raw = localStorage.getItem('stratum_supe_sessions_v1_1');
+    if (!raw) {
+      toast('No sessions in this browser\'s storage. Try CSV import.');
+      return;
+    }
+    const sessions = JSON.parse(raw);
+    STATE.sessions = sessions.map(s => ({
+      id: s.id,
+      timestamp: s.timestamp,
+      version: s.version,
+      date: s.date_iso || s.inputs?.date_iso || (s.timestamp ? s.timestamp.slice(0, 10) : ''),
+      weather: s.weather || s.inputs?.weather || '',
+      cost_code: s.inputs?.cost_code || '',
+      activity: s.inputs?.activity || '',
+      shift: s.inputs?.shift || '',
+      excavator: s.inputs?.excavator,
+      exc_class: '',
+      truck_class: s.inputs?.truck_class,
+      truck_count: s.inputs?.truck_count || 0,
+      material: s.inputs?.material,
+      planned_smu: s.inputs?.planned_smu || s.inputs?.shift_hrs || 0,
+      distance_km: s.inputs?.distance_km || 0,
+      bottleneck: s.predicted?.bottleneck,
+      match_factor: s.predicted?.match_factor || 0,
+      trucks_needed: s.predicted?.trucks_needed_balanced || 0,
+      production_bcm: s.predicted?.production_bcm || 0,
+      bcm_per_smu: s.predicted?.bcm_per_smu || s.predicted?.production_bcm_per_hr || 0,
+      cost_per_bcm: s.predicted?.cost_per_bcm || 0,
+      cost_per_bcm_primary: s.predicted?.cost_per_bcm_primary || 0,
+      total_cost: s.predicted?.total_cost_full || s.predicted?.total_cost_working || 0,
+      cost_primary: s.predicted?.cost_primary || s.predicted?.total_cost_working || 0,
+      cost_ancillaries: s.predicted?.cost_ancillaries || 0,
+      cost_labour: s.predicted?.cost_labour || 0,
+      cost_fuel: s.predicted?.cost_fuel || 0,
+      fuel_L: s.predicted?.total_fuel_L || 0,
+      passes: s.predicted?.passes || 0,
+      payload_bcm: s.predicted?.payload_bcm || 0,
+      loads_per_truck: s.predicted?.loads_per_truck || 0,
+      Z: s.predicted?.Z || 0,
+      BB: s.predicted?.BB || 0,
+      DD: s.predicted?.DD || 0,
+      actual_bcm: s.actual?.production_bcm ?? null,
+      actual_cost: s.actual?.cost ?? null,
+      loss_reasons: s.opportunity_loss_reasons || [],
+      notes: s.notes || ''
+    }));
+    STATE.source = 'localStorage';
+    const dates = [...new Set(STATE.sessions.map(s => s.date).filter(Boolean))].sort();
+    STATE.filter_date = dates[dates.length - 1] || null;
+    const dateEl = document.getElementById('filter-date');
+    if (STATE.filter_date) dateEl.value = STATE.filter_date;
+    render();
+    toast(`Loaded ${STATE.sessions.length} sessions from browser storage`);
+  } catch (e) {
+    toast('Failed to load from browser storage: ' + e.message);
+  }
+}
+
+// =============================================================
+// CLOUD LOAD — Supabase backend (v0.4)
+// =============================================================
+const STRATUM_CLOUD = {
+  url: 'https://mpqnqycsgbyvcbkihbvn.supabase.co',
+  key: 'sb_publishable_nKbDn2tPXmSVpLVhFFac6w_Jz9xdknl',
+};
+
+async function loadFromCloud() {
+  toast('Loading from cloud…');
+  try {
+    const r = await fetch(STRATUM_CLOUD.url + '/rest/v1/sessions?select=*&order=shift_date.desc,created_at.desc&limit=500', {
+      headers: { apikey: STRATUM_CLOUD.key, Authorization: 'Bearer ' + STRATUM_CLOUD.key }
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const rows = await r.json();
+    if (!rows || rows.length === 0) {
+      toast('No sessions in cloud yet. Save a session from Plan A first.');
+      return;
+    }
+    STATE.sessions = rows.map(row => {
+      const raw = row.raw_json || {};
+      const p = raw.predicted || {};
+      const a = raw.actual || {};
+      return {
+        id: row.id,
+        timestamp: row.created_at,
+        version: raw.version || 'cloud',
+        supervisor: row.supervisor_id || '',
+        date: row.shift_date || (row.created_at ? row.created_at.slice(0,10) : ''),
+        weather: row.weather || raw.weather || '',
+        cost_code: row.cost_code || (raw.inputs && raw.inputs.cost_code) || '',
+        activity: row.activity_type || (raw.inputs && raw.inputs.activity) || '',
+        shift: row.shift_type || (raw.inputs && raw.inputs.shift) || '',
+        excavator: row.dig_unit || (raw.inputs && raw.inputs.excavator),
+        exc_class: '',
+        truck_class: row.truck_class || (raw.inputs && raw.inputs.truck_class),
+        truck_count: row.truck_count || (raw.inputs && raw.inputs.truck_count) || 0,
+        material: row.material_type || (raw.inputs && raw.inputs.material),
+        planned_smu: row.planned_smu || (raw.inputs && raw.inputs.planned_smu) || 0,
+        distance_km: (raw.inputs && raw.inputs.distance_km) || 0,
+        bottleneck: row.bottleneck || p.bottleneck,
+        match_factor: p.match_factor || 0,
+        trucks_needed: p.trucks_needed_balanced || 0,
+        production_bcm: row.target_bcm_shift || p.production_bcm || 0,
+        bcm_per_smu: p.bcm_per_smu || 0,
+        cost_per_bcm: row.target_cost_per_bcm || p.cost_per_bcm || 0,
+        cost_per_bcm_primary: p.cost_per_bcm_primary || 0,
+        total_cost: p.total_cost_full || p.total_cost_visible || 0,
+        cost_primary: p.cost_primary || 0,
+        cost_ancillaries: p.cost_ancillaries || 0,
+        cost_labour: p.cost_labour || 0,
+        cost_fuel: p.cost_fuel || 0,
+        fuel_L: p.total_fuel_L || 0,
+        passes: p.passes || 0,
+        payload_bcm: p.payload_bcm || 0,
+        loads_per_truck: p.loads_per_truck || 0,
+        Z: p.Z || 0, BB: p.BB || 0, DD: p.DD || 0,
+        actual_bcm: row.actual_bcm_shift != null ? row.actual_bcm_shift : (a.production_bcm != null ? a.production_bcm : null),
+        actual_cost: a.cost != null ? a.cost : null,
+        loss_reasons: raw.opportunity_loss_reasons || [],
+        notes: raw.notes || ''
+      };
+    });
+    STATE.source = 'cloud';
+    const dates = [...new Set(STATE.sessions.map(s => s.date).filter(Boolean))].sort();
+    STATE.filter_date = dates[dates.length - 1] || null;
+    const dateEl = document.getElementById('filter-date');
+    if (STATE.filter_date && dateEl) dateEl.value = STATE.filter_date;
+    render();
+    const supervisors = [...new Set(rows.map(r => r.supervisor_id).filter(Boolean))];
+    toast(`Loaded ${STATE.sessions.length} sessions from cloud · ${supervisors.length} supervisor${supervisors.length === 1 ? '' : 's'}`);
+  } catch (e) {
+    toast('Cloud load failed: ' + (e.message || e));
+  }
+}
+
+// =============================================================
+// DERIVED ROLLUPS
+// =============================================================
+
+function filtered() {
+  if (!STATE.filter_date) return STATE.sessions;
+  return STATE.sessions.filter(s => s.date === STATE.filter_date);
+}
+
+function pitRollup(sessions) {
+  if (sessions.length === 0) return null;
+  let total_bcm = 0, total_cost = 0;
+  let bottleneck_counts = { balanced: 0, dig: 0, truck: 0, dump: 0 };
+  let exc_count = 0, total_truck_count = 0;
+  let total_fuel_L = 0;
+  let total_smu = 0;
+  const fleet_by_exc = {};
+  const fleet_by_truck = {};
+  sessions.forEach(s => {
+    total_bcm += s.production_bcm || 0;
+    total_cost += s.total_cost || 0;
+    total_smu += s.planned_smu || 0;
+    total_fuel_L += s.fuel_L || 0;
+    if (s.bottleneck && bottleneck_counts[s.bottleneck] !== undefined) bottleneck_counts[s.bottleneck]++;
+    if (s.excavator) {
+      exc_count++;
+      fleet_by_exc[s.excavator] = (fleet_by_exc[s.excavator] || 0) + 1;
+    }
+    if (s.truck_class && s.truck_count) {
+      total_truck_count += s.truck_count;
+      fleet_by_truck[s.truck_class] = (fleet_by_truck[s.truck_class] || 0) + s.truck_count;
+    }
+  });
+  const weighted_cost_per_bcm = total_bcm > 0 ? total_cost / total_bcm : 0;
+  return {
+    n: sessions.length,
+    total_bcm, total_cost, weighted_cost_per_bcm,
+    bottleneck_counts, exc_count, total_truck_count,
+    total_fuel_L, total_smu,
+    fleet_by_exc, fleet_by_truck
+  };
+}
+
+// ============================================================
+// HELP REPORT — Highlights / Lowlights / Emerging / Priorities / How you can help
+// Runs over the entire loaded dataset (not the date filter).
+// ============================================================
+function buildHelpReport(allSessions) {
+  const H = [], L = [], E = [], P = [], HELP = [];
+  if (allSessions.length === 0) return { H, L, E, P, HELP, n_sessions: 0, n_actuals: 0 };
+
+  const r = pitRollup(allSessions);
+  const bc = r.bottleneck_counts;
+  const n = allSessions.length;
+
+  // Sort by cost per BCM (excluding zeros)
+  const costed = allSessions.filter(s => s.cost_per_bcm > 0).sort((a, b) => a.cost_per_bcm - b.cost_per_bcm);
+  if (costed.length >= 1) {
+    const best = costed[0];
+    H.push(`<strong>${best.cost_code}</strong> running at <strong>${fmtMoney(best.cost_per_bcm, 2)}/bcm</strong> on ${best.date} — lowest unit cost in the dataset (${fmt(best.production_bcm, 0)} bcm, ${best.excavator} + ${best.truck_count}×${best.truck_class})`);
+    if (costed.length >= 3) {
+      const median = costed[Math.floor(costed.length / 2)];
+      H.push(`Median pit unit cost is <strong>${fmtMoney(median.cost_per_bcm, 2)}/bcm</strong> across ${n} planned operation${n > 1 ? 's' : ''}`);
+    }
+    const worst = costed[costed.length - 1];
+    if (costed.length > 1 && worst.cost_per_bcm > best.cost_per_bcm * 1.3) {
+      L.push(`<strong>${worst.cost_code}</strong> at <strong>${fmtMoney(worst.cost_per_bcm, 2)}/bcm</strong> on ${worst.date} — ${((worst.cost_per_bcm / best.cost_per_bcm - 1) * 100).toFixed(0)}% above best-performer. ${worst.bottleneck.toUpperCase()}-constrained.`);
+    }
+  }
+
+  // Bottleneck distribution
+  if (bc.balanced && bc.balanced / n > 0.5) {
+    H.push(`<strong>${bc.balanced}/${n}</strong> operation${bc.balanced > 1 ? 's are' : ' is'} well-matched (match factor 0.95-1.05) — fleet allocation discipline is holding`);
+  }
+  if (bc.truck && bc.truck / n > 0.3) {
+    L.push(`<strong>${bc.truck}/${n}</strong> operations are truck-constrained — production loss accumulating across the pit`);
+    E.push(`Chronic truck under-allocation (${((bc.truck/n)*100).toFixed(0)}% of ops) — likely a structural fleet shortfall rather than rotation issue`);
+  }
+  if (bc.dig && bc.dig / n > 0.4 && bc.balanced === 0) {
+    E.push(`No balanced operations in the dataset — most ops dig-bound which means trucks waiting and standby cost bleeding`);
+  }
+  if (bc.dump > 0) {
+    E.push(`${bc.dump} dump-constrained operation${bc.dump > 1 ? 's' : ''} — review dump face width, sequencing, or compaction process`);
+  }
+
+  // Mismatch detection (low-quality should be dig, high-quality should be dump)
+  const mismatches = allSessions.filter(s => {
+    if (!s.bottleneck || s.bottleneck === 'balanced') return false;
+    // Use shift assumption: 'high' quality should be dump, others should be dig
+    // This isn't perfect because we don't have explicit quality field — proxy from material
+    if (s.material && (s.material.includes('topsoil') || s.material.includes('embankment'))) return s.bottleneck !== 'dump';
+    return s.bottleneck === 'truck'; // most waste ops should not be truck-constrained
+  });
+  if (mismatches.length > 0) {
+    L.push(`<strong>${mismatches.length}</strong> operation${mismatches.length > 1 ? 's have' : ' has'} bottleneck mismatched to activity quality — re-balance fleet to suit work type`);
+  }
+
+  // Match factor outliers
+  const farFromBalance = allSessions.filter(s => s.match_factor && (s.match_factor < 0.80 || s.match_factor > 1.25));
+  if (farFromBalance.length > 0) {
+    E.push(`<strong>${farFromBalance.length}</strong> operation${farFromBalance.length > 1 ? 's are' : ' is'} more than 20% off match — fleet sizing review needed`);
+  }
+
+  // Loss reasons aggregation
+  const reasonCounts = {};
+  allSessions.forEach(s => (s.loss_reasons || []).forEach(rsn => { reasonCounts[rsn] = (reasonCounts[rsn] || 0) + 1; }));
+  const topReasons = Object.entries(reasonCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  topReasons.forEach(([reason, count]) => {
+    const niceReason = reason.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    E.push(`Recurring captured loss reason: <strong>${niceReason}</strong> — ${count} occurrence${count > 1 ? 's' : ''} across the dataset`);
+  });
+
+  // Plan vs actual analysis (if actuals loaded)
+  if (STATE.actuals.length > 0) {
+    let totalPlan = 0, totalActual = 0, matchedSessions = 0;
+    let p_cost = 0, a_cost = 0;
+    allSessions.forEach(s => {
+      const act = findActualFor(s);
+      if (act) {
+        matchedSessions++;
+        totalPlan += s.production_bcm || 0;
+        totalActual += act.actual_bcm || 0;
+        p_cost += s.total_cost || 0;
+        a_cost += act.actual_cost || 0;
+      }
+    });
+    if (matchedSessions > 0) {
+      const gapPct = totalPlan > 0 ? (totalActual - totalPlan) / totalPlan : 0;
+      const costGapPct = p_cost > 0 ? (a_cost - p_cost) / p_cost : 0;
+      if (gapPct > 0.05) H.push(`Actual production is <strong>+${(gapPct*100).toFixed(1)}%</strong> vs plan (${fmt(totalActual - totalPlan, 0)} bcm above target) across ${matchedSessions} reconciled op${matchedSessions > 1 ? 's' : ''}`);
+      if (gapPct < -0.05) L.push(`Actual production is <strong>${(gapPct*100).toFixed(1)}%</strong> vs plan (${fmt(Math.abs(totalActual - totalPlan), 0)} bcm shortfall) across ${matchedSessions} reconciled op${matchedSessions > 1 ? 's' : ''}`);
+      if (costGapPct > 0.05) L.push(`Actual cost <strong>+${(costGapPct*100).toFixed(1)}%</strong> vs plan (${fmtMoney(a_cost - p_cost, 0)} overrun) — investigate cost drivers in the variance ops`);
+      const unmatched = allSessions.length - matchedSessions;
+      if (unmatched > 0) E.push(`<strong>${unmatched}</strong> planned op${unmatched > 1 ? 's' : ''} with no actuals matched — either tracker data missing or cost code drift`);
+    }
+  }
+
+  // Reallocation opportunities → priorities
+  const opps = reallocationOpportunities(allSessions);
+  if (opps.length > 0) {
+    opps.slice(0, 4).forEach(o => {
+      P.push(`Move <strong>${o.truck_count} truck${o.truck_count > 1 ? 's' : ''}</strong> from <strong>${o.from.cost_code}</strong> (over-trucked, dig-constrained) to <strong>${o.to.cost_code}</strong> (under-trucked)${o.sameClass ? '' : ' — cross-class swap'}`);
+    });
+  }
+  // Lowest match-factor ops → priority
+  const worstMatched = [...allSessions].filter(s => s.match_factor < 0.90 || s.match_factor > 1.20)
+                                       .sort((a, b) => Math.abs(1 - a.match_factor) - Math.abs(1 - b.match_factor))
+                                       .reverse().slice(0, 3);
+  worstMatched.forEach(s => {
+    P.push(`Re-balance <strong>${s.cost_code}</strong> — match ${s.match_factor.toFixed(2)} (${s.bottleneck}-constrained, ${s.truck_count}×${s.truck_class})`);
+  });
+
+  // Repeated cost codes appearing in worst bands
+  const codeStats = {};
+  allSessions.forEach(s => {
+    if (!s.cost_code) return;
+    if (!codeStats[s.cost_code]) codeStats[s.cost_code] = { n: 0, sum_cost: 0, sum_bcm: 0, bottlenecks: {} };
+    codeStats[s.cost_code].n++;
+    codeStats[s.cost_code].sum_cost += s.total_cost || 0;
+    codeStats[s.cost_code].sum_bcm += s.production_bcm || 0;
+    codeStats[s.cost_code].bottlenecks[s.bottleneck] = (codeStats[s.cost_code].bottlenecks[s.bottleneck] || 0) + 1;
+  });
+  const recurringPoor = Object.entries(codeStats).filter(([_, stat]) => stat.n >= 2 && stat.bottlenecks.truck >= 2);
+  recurringPoor.forEach(([code, stat]) => {
+    P.push(`<strong>${code}</strong> truck-constrained on ${stat.bottlenecks.truck} of ${stat.n} shifts — structural fleet shortage, not isolated incident`);
+  });
+
+  // HELP requests for senior leadership
+  if (bc.dig / n > 0.5) {
+    HELP.push(`<strong>Upsize the primary excavator</strong> on the pit's dominant operations — most ops are dig-bound, more bucket capacity translates to immediate production lift`);
+  }
+  if (bc.truck / n > 0.3) {
+    HELP.push(`<strong>Approve additional truck allocation</strong> — current fleet under-trucks consistently. Cost of incremental trucks below cost of production loss`);
+  }
+  if (topReasons.some(([rsn]) => rsn.includes('haul_road') || rsn.includes('haul'))) {
+    HELP.push(`<strong>Capital approval for haul road grading programme</strong> — recurring haul road conditions hitting rolling resistance and cycle times`);
+  }
+  if (topReasons.some(([rsn]) => rsn.includes('operator') || rsn.includes('crew'))) {
+    HELP.push(`<strong>Operator training and retention programme</strong> — operator factor is showing up as a recurring loss event`);
+  }
+  if (topReasons.some(([rsn]) => rsn.includes('reliability_unplanned') || rsn.includes('mechanical'))) {
+    HELP.push(`<strong>Preventive maintenance window or critical spares investment</strong> — unplanned reliability events recurring in the dataset`);
+  }
+  if (topReasons.some(([rsn]) => rsn.includes('weather'))) {
+    HELP.push(`<strong>Wet-weather contingency plan</strong> — weather is a captured loss driver, possible scheduling or shelter investment`);
+  }
+  if (STATE.actuals.length === 0 && allSessions.length > 0) {
+    HELP.push(`<strong>Sustain the moat capture</strong> — load actual production data via the tracker CSV so plan vs actual reconciliation can run. Right now we're flying blind on actuals.`);
+  }
+  if (HELP.length === 0) {
+    HELP.push(`Operations look balanced and well-equipped from the data on hand — keep the moat capture cadence going and surface new asks as patterns emerge`);
+  }
+
+  return { H, L, E, P, HELP, n_sessions: n, n_actuals: STATE.actuals.length };
+}
+
+function reallocationOpportunities(sessions) {
+  // Find pairs where one is truck-constrained (could use more trucks) and one is dig-constrained
+  // (has surplus trucks). Same truck class first; cross-class as a stretch.
+  const opps = [];
+  const under = sessions.filter(s => s.bottleneck === 'truck' && s.match_factor < 0.95);
+  const over = sessions.filter(s => s.bottleneck === 'dig' && s.match_factor > 1.05);
+  under.forEach(u => {
+    over.forEach(o => {
+      if (u.id === o.id) return;
+      const sameClass = u.truck_class === o.truck_class;
+      const u_short = u.trucks_needed - u.truck_count;     // how many trucks u needs
+      const o_excess = o.truck_count - o.trucks_needed;    // how many trucks o has extra
+      const transferable = Math.min(Math.ceil(u_short), Math.floor(o_excess));
+      if (transferable >= 1) {
+        opps.push({
+          from: o, to: u,
+          truck_count: transferable,
+          sameClass,
+          rationale: sameClass
+            ? `${o.cost_code} has ${o_excess.toFixed(1)} ${o.truck_class}-class trucks of standby cost. ${u.cost_code} is short by ${u_short.toFixed(1)} of same class. Move ${transferable}.`
+            : `${o.cost_code} is over-trucked on ${o.truck_class}s; ${u.cost_code} is under-trucked on ${u.truck_class}s. Cross-class swap if classes are interchangeable in your fleet.`
+        });
+      }
+    });
+  });
+  // Dedupe by (from.id, to.id, truck_count)
+  const seen = new Set();
+  return opps.filter(o => {
+    const k = `${o.from.id}|${o.to.id}|${o.truck_count}`;
+    if (seen.has(k)) return false;
+    seen.add(k); return true;
+  });
+}
+
+// =============================================================
+// RENDER
+// =============================================================
+
+function render() {
+  const c = document.getElementById('container');
+  // Always show view tabs so the user sees the app structure
+  const tabsHtml = `<div class="view-tabs">
+    <div class="view-tab ${STATE.view === 'day' ? 'active' : ''}" data-view="day">Day View</div>
+    <div class="view-tab ${STATE.view === 'trends' ? 'active' : ''}" data-view="trends">Trends</div>
+    <div class="view-tab ${STATE.view === 'report' ? 'active' : ''}" data-view="report">HELP Report</div>
+  </div>`;
+  if (STATE.sessions.length === 0) {
+    c.innerHTML = tabsHtml + `
+      <div class="empty-state">
+        <h2>No sessions loaded</h2>
+        <p>Pit Boss reads sessions saved from the Production Superintendent app. Either click <strong>Load Sessions CSV</strong> in the header and pick the export file from Supe, or click <strong>Browser Storage</strong> if you've used Supe in this same browser session.</p>
+        <p style="margin-top:14px;color:var(--text2);">After loading plans, optionally click <strong>Load Tracker</strong> to upload a CSV of actuals (date · cost_code · actual_bcm · actual_cost · hours_worked · notes) — Pit Boss matches on date+cost_code and shows plan vs actual variance per operation.</p>
+        <p style="margin-top:14px;color:var(--text2);font-size:11px;">CSV import is the more reliable path — works across browsers and machines. Browser storage only works when Supe and Pit Boss are opened from the same browser with the same file:// origin.</p>
+      </div>`;
+    bindViewTabs();
+    return;
+  }
+
+  const sessions = filtered();
+  const rollup = pitRollup(sessions);
+  const opps = reallocationOpportunities(sessions);
+
+  // Date filter — derive list of available dates
+  const allDates = [...new Set(STATE.sessions.map(s => s.date).filter(Boolean))].sort();
+  const dateOptions = ['<option value="">All dates</option>', ...allDates.map(d => `<option value="${d}" ${d === STATE.filter_date ? 'selected' : ''}>${d}</option>`)].join('');
+
+  // View tabs (v0.3 adds Trends)
+  let html = `<div class="view-tabs">
+    <div class="view-tab ${STATE.view === 'day' ? 'active' : ''}" data-view="day">Day View</div>
+    <div class="view-tab ${STATE.view === 'trends' ? 'active' : ''}" data-view="trends">Trends</div>
+    <div class="view-tab ${STATE.view === 'report' ? 'active' : ''}" data-view="report">HELP Report</div>
+  </div>`;
+
+  // Trends view (v0.3)
+  if (STATE.view === 'trends') {
+    html += renderTrendsView();
+    c.innerHTML = html;
+    bindViewTabs();
+    // Render charts after DOM is in place
+    setTimeout(() => drawTrendsCharts(), 50);
+    return;
+  }
+
+  // HELP Report view
+  if (STATE.view === 'report') {
+    const help = buildHelpReport(STATE.sessions);  // run over ENTIRE dataset, not just filter
+    html += `<div class="section">
+      <div class="section-title">
+        Period summary <span class="section-sub">${help.n_sessions} sessions${help.n_actuals > 0 ? ' · ' + help.n_actuals + ' actuals reconciled' : ' · no actuals loaded'}</span>
+        <span style="margin-left:auto;display:flex;gap:8px;">
+          <button id="btn-report-md" class="ghost" style="padding:6px 12px;background:var(--bg2);border:1px solid var(--border);">Export Markdown</button>
+          <button id="btn-report-print" class="primary" style="padding:6px 12px;">Print / Save as PDF</button>
+        </span>
+      </div>
+      <div class="help-grid">
+        <div class="help-card h">
+          <div class="help-card-title">Highlights <span class="help-card-sub">${help.H.length}</span></div>
+          ${help.H.length > 0 ? `<ul class="help-list">${help.H.map(x => `<li>${x}</li>`).join('')}</ul>` : '<div class="help-empty">No standout positives surfaced yet — load more sessions or wait for actuals to reconcile.</div>'}
+        </div>
+        <div class="help-card l">
+          <div class="help-card-title">Lowlights <span class="help-card-sub">${help.L.length}</span></div>
+          ${help.L.length > 0 ? `<ul class="help-list">${help.L.map(x => `<li>${x}</li>`).join('')}</ul>` : '<div class="help-empty">No material underperformance flagged.</div>'}
+        </div>
+        <div class="help-card e">
+          <div class="help-card-title">Emerging issues <span class="help-card-sub">${help.E.length}</span></div>
+          ${help.E.length > 0 ? `<ul class="help-list">${help.E.map(x => `<li>${x}</li>`).join('')}</ul>` : '<div class="help-empty">No recurring patterns yet — keep capturing.</div>'}
+        </div>
+        <div class="help-card p">
+          <div class="help-card-title">Priorities <span class="help-card-sub">${help.P.length}</span></div>
+          ${help.P.length > 0 ? `<ul class="help-list">${help.P.map(x => `<li>${x}</li>`).join('')}</ul>` : '<div class="help-empty">No urgent reallocation or rebalancing required.</div>'}
+        </div>
+      </div>
+      <div class="help-card help" style="margin-top:14px;">
+        <div class="help-card-title">How leadership can help <span class="help-card-sub">${help.HELP.length} ask${help.HELP.length === 1 ? '' : 's'}</span></div>
+        ${help.HELP.length > 0 ? `<ul class="help-list">${help.HELP.map(x => `<li>${x}</li>`).join('')}</ul>` : '<div class="help-empty">No specific asks — operations self-sufficient at current scale.</div>'}
+      </div>
+    </div>
+    <div style="color:var(--text2);font-size:11px;text-align:center;margin-top:18px;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;">
+      HELP report runs over all loaded data, not the date filter · ${STATE.sessions.length} session${STATE.sessions.length > 1 ? 's' : ''}${help.n_actuals > 0 ? ' · ' + help.n_actuals + ' actuals' : ''}
+    </div>`;
+    c.innerHTML = html;
+    bindViewTabs();
+    // v0.3 — wire up report export buttons
+    document.getElementById('btn-report-md')?.addEventListener('click', () => exportHelpReportMD(help));
+    document.getElementById('btn-report-print')?.addEventListener('click', () => printHelpReport(help));
+    return;
+  }
+
+  if (!rollup) {
+    html = `
+      <div class="empty-state">
+        <h2>No sessions for ${STATE.filter_date || 'this filter'}</h2>
+        <p>Try selecting a different date or clearing the date filter.</p>
+      </div>`;
+    c.innerHTML = html;
+    return;
+  }
+
+  // Overview tiles
+  html += `<div class="overview">
+    <div class="ov-tile">
+      <div class="ov-label">Total production</div>
+      <div class="ov-value">${fmt(rollup.total_bcm, 0)}</div>
+      <div class="ov-detail">bcm planned · ${rollup.n} active op${rollup.n > 1 ? 's' : ''}</div>
+    </div>
+    <div class="ov-tile">
+      <div class="ov-label">Weighted unit cost</div>
+      <div class="ov-value">${fmtMoney(rollup.weighted_cost_per_bcm, 2)}</div>
+      <div class="ov-detail">per bcm · fully loaded</div>
+    </div>
+    <div class="ov-tile">
+      <div class="ov-label">Total shift cost</div>
+      <div class="ov-value">${fmtMoney(rollup.total_cost, 0)}</div>
+      <div class="ov-detail">across all active ops</div>
+    </div>
+    <div class="ov-tile">
+      <div class="ov-label">Excavators on shift</div>
+      <div class="ov-value">${rollup.exc_count}</div>
+      <div class="ov-detail">${Object.entries(rollup.fleet_by_exc).map(([k,v])=>`${v}×${k}`).join(' · ')}</div>
+    </div>
+    <div class="ov-tile">
+      <div class="ov-label">Trucks committed</div>
+      <div class="ov-value">${rollup.total_truck_count}</div>
+      <div class="ov-detail">${Object.entries(rollup.fleet_by_truck).map(([k,v])=>`${v}×${k}`).join(' · ')}</div>
+    </div>
+    <div class="ov-tile">
+      <div class="ov-label">Diesel burn</div>
+      <div class="ov-value">${fmt(rollup.total_fuel_L, 0)}</div>
+      <div class="ov-detail">L · ${fmt(rollup.total_smu, 0)} SMU planned</div>
+    </div>
+  </div>`;
+
+  // Bottleneck distribution
+  const bc = rollup.bottleneck_counts;
+  const bcTotal = bc.balanced + bc.dig + bc.truck + bc.dump;
+  if (bcTotal > 0) {
+    html += `<div class="section">
+      <div class="section-title">Bottleneck distribution <span class="section-sub">${bcTotal} operations</span></div>
+      <div class="dist-bar">
+        ${bc.balanced > 0 ? `<div class="dist-seg dist-balanced" style="width:${(bc.balanced/bcTotal)*100}%">${bc.balanced > 0 ? bc.balanced : ''}</div>` : ''}
+        ${bc.dig > 0 ? `<div class="dist-seg dist-dig" style="width:${(bc.dig/bcTotal)*100}%">${bc.dig}</div>` : ''}
+        ${bc.truck > 0 ? `<div class="dist-seg dist-truck" style="width:${(bc.truck/bcTotal)*100}%">${bc.truck}</div>` : ''}
+        ${bc.dump > 0 ? `<div class="dist-seg dist-dump" style="width:${(bc.dump/bcTotal)*100}%">${bc.dump}</div>` : ''}
+      </div>
+      <div class="dist-legend">
+        <div class="item"><span class="swatch" style="background:var(--green);"></span> Balanced (${bc.balanced})</div>
+        <div class="item"><span class="swatch" style="background:var(--ochre);"></span> Dig-constrained (${bc.dig})</div>
+        <div class="item"><span class="swatch" style="background:var(--red);"></span> Truck-constrained (${bc.truck})</div>
+        <div class="item"><span class="swatch" style="background:var(--copper);"></span> Dump-constrained (${bc.dump})</div>
+      </div>
+    </div>`;
+  }
+
+  // Reallocation opportunities
+  if (opps.length > 0) {
+    html += `<div class="section">
+      <div class="section-title">Fleet reallocation opportunities <span class="section-sub">${opps.length} candidate move${opps.length > 1 ? 's' : ''}</span></div>
+      ${opps.slice(0, 4).map(o => `<div class="alert-box">
+        <div class="alert-title">→ Move ${o.truck_count} truck${o.truck_count > 1 ? 's' : ''} from ${o.from.cost_code} → ${o.to.cost_code}${o.sameClass ? '' : ' (cross-class)'}</div>
+        <div class="alert-text">${o.rationale}</div>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  // Plan vs Actual roll-up if actuals loaded
+  const hasActuals = STATE.actuals.length > 0;
+  let pvaSummary = null;
+  if (hasActuals) {
+    let p_bcm = 0, a_bcm = 0, p_cost = 0, a_cost = 0, matched = 0, unmatched = 0;
+    sessions.forEach(s => {
+      const act = findActualFor(s);
+      p_bcm += s.production_bcm || 0;
+      p_cost += s.total_cost || 0;
+      if (act) {
+        matched++;
+        a_bcm += act.actual_bcm || 0;
+        a_cost += act.actual_cost || 0;
+      } else { unmatched++; }
+    });
+    const bcm_delta = a_bcm - p_bcm;
+    const cost_delta = a_cost - p_cost;
+    const p_unit = p_bcm > 0 ? p_cost / p_bcm : 0;
+    const a_unit = a_bcm > 0 ? a_cost / a_bcm : 0;
+    pvaSummary = { p_bcm, a_bcm, bcm_delta, p_cost, a_cost, cost_delta, p_unit, a_unit, matched, unmatched };
+
+    html += `<div class="section">
+      <div class="section-title">Plan vs Actual <span class="section-sub">${matched}/${matched + unmatched} ops matched · ${STATE.actuals.length} actuals loaded</span></div>
+      <div class="fleet-grid">
+        <div class="fleet-cell" style="border-left-color:${bcm_delta >= 0 ? 'var(--green)' : 'var(--red)'};">
+          <div class="fc-label">Production · plan vs actual</div>
+          <div class="fc-value">${fmt(a_bcm, 0)} <span style="color:var(--text2);font-size:12px;">/ ${fmt(p_bcm, 0)} plan</span></div>
+          <div class="fc-detail" style="color:${bcm_delta >= 0 ? 'var(--green)' : 'var(--red)'};">${bcm_delta >= 0 ? '+' : ''}${fmt(bcm_delta, 0)} bcm (${p_bcm > 0 ? ((bcm_delta/p_bcm)*100).toFixed(1) + '%' : '—'})</div>
+        </div>
+        <div class="fleet-cell" style="border-left-color:${cost_delta <= 0 ? 'var(--green)' : 'var(--red)'};">
+          <div class="fc-label">Cost · plan vs actual</div>
+          <div class="fc-value">${fmtMoney(a_cost, 0)} <span style="color:var(--text2);font-size:12px;">/ ${fmtMoney(p_cost, 0)} plan</span></div>
+          <div class="fc-detail" style="color:${cost_delta <= 0 ? 'var(--green)' : 'var(--red)'};">${cost_delta >= 0 ? '+' : ''}${fmtMoney(cost_delta, 0)} (${p_cost > 0 ? ((cost_delta/p_cost)*100).toFixed(1) + '%' : '—'})</div>
+        </div>
+        <div class="fleet-cell">
+          <div class="fc-label">Unit cost · plan vs actual</div>
+          <div class="fc-value">${fmtMoney(a_unit, 2)} <span style="color:var(--text2);font-size:12px;">/ ${fmtMoney(p_unit, 2)} plan</span></div>
+          <div class="fc-detail">${(a_unit - p_unit) >= 0 ? '+' : ''}${fmtMoney(a_unit - p_unit, 2)} / bcm</div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // Operations table
+  html += `<div class="section">
+    <div class="section-title">Active operations <span class="section-sub">${sessions.length} on shift${hasActuals ? ' · actuals matched where available' : ''}</span></div>
+    <table class="ops-table">
+      <thead>
+        <tr>
+          <th>Cost code</th>
+          <th>Fleet</th>
+          <th>Material</th>
+          <th style="text-align:right;">Production (plan ${hasActuals ? '/ actual' : ''})</th>
+          <th style="text-align:right;">$ / bcm</th>
+          <th>Bottleneck</th>
+          <th>Match</th>
+          <th style="text-align:right;">Cycle</th>
+          <th style="text-align:right;">Loads / truck</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sessions.map(s => {
+          const mfClass = !s.match_factor ? '' :
+            s.match_factor < 0.95 ? 'alert' :
+            s.match_factor > 1.05 ? 'warn' : 'ok';
+          const mfPct = Math.min(1.5, s.match_factor) / 1.5 * 100;
+          const act = hasActuals ? findActualFor(s) : null;
+          const bcm_var = act && s.production_bcm ? (act.actual_bcm - s.production_bcm) / s.production_bcm : null;
+          const bcm_var_color = bcm_var === null ? 'var(--text2)' : bcm_var >= 0 ? 'var(--green)' : 'var(--red)';
+          return `<tr>
+            <td class="label-cell"><strong>${s.cost_code || '—'}</strong><br><span style="color:var(--text2);font-size:11px;">${s.activity || ''} · ${s.shift || ''}${act ? ' · <span style="color:var(--copperLight);">matched</span>' : (hasActuals ? ' · <span style="color:var(--ochre);">no actual</span>' : '')}</span></td>
+            <td>${s.excavator || '—'}<br><span style="color:var(--text2);">${s.truck_count}×${s.truck_class || '—'}</span></td>
+            <td class="label-cell" style="color:var(--text1);">${s.material || '—'}</td>
+            <td style="text-align:right;">
+              ${fmt(s.production_bcm, 0)}${act ? ` <span style="color:${bcm_var_color};">/ ${fmt(act.actual_bcm, 0)}</span>` : ''}
+              <br><span style="color:var(--text2);font-size:11px;">${fmt(s.bcm_per_smu, 0)} bcm/SMU plan${bcm_var !== null ? ` · <span style="color:${bcm_var_color};">${bcm_var >= 0 ? '+' : ''}${(bcm_var*100).toFixed(1)}%</span>` : ''}</span>
+            </td>
+            <td style="text-align:right;" class="cost">${fmtMoney(s.cost_per_bcm, 2)}<br><span style="color:var(--text2);font-family:'Barlow';font-size:11px;">${fmtMoney(s.total_cost, 0)}${act && act.actual_cost ? ' / ' + fmtMoney(act.actual_cost, 0) : ''}</span></td>
+            <td><span class="bottleneck-chip ${bottleneckClass(s.bottleneck)}">${bottleneckLabel(s.bottleneck)}</span></td>
+            <td>${(s.match_factor || 0).toFixed(2)} <span class="match-bar"><span class="match-fill ${mfClass}" style="width:${mfPct}%"></span></span></td>
+            <td style="text-align:right;color:var(--text1);">${s.payload_bcm ? s.payload_bcm.toFixed(1) + ' bcm' : '—'}<br><span style="color:var(--text2);font-size:11px;">${s.passes || '—'} passes</span></td>
+            <td style="text-align:right;">${s.loads_per_truck ? s.loads_per_truck.toFixed(0) : '—'}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+    ${hasActuals ? `<div class="help-block" style="margin-top:10px;font-size:11px;color:var(--text2);font-family:'Barlow',sans-serif;">Matched on (date, cost_code) — fuzzy match on whitespace/case. Unmatched plans (no actual) shown but excluded from variance roll-up. Unmatched actuals (no plan) listed separately below.</div>` : ''}
+  </div>`;
+
+  // Show orphan actuals if any (actuals with no matching plan)
+  if (hasActuals) {
+    const dateFiltered = STATE.filter_date ? STATE.actuals.filter(a => a.date === STATE.filter_date) : STATE.actuals;
+    const orphans = dateFiltered.filter(a => !sessions.find(s => findActualFor(s) === a));
+    if (orphans.length > 0) {
+      html += `<div class="section">
+        <div class="section-title">Unmatched actuals <span class="section-sub">${orphans.length} actual${orphans.length === 1 ? '' : 's'} with no plan</span></div>
+        <table class="ops-table">
+          <thead><tr><th>Date</th><th>Cost code</th><th style="text-align:right;">Actual bcm</th><th style="text-align:right;">Actual cost</th><th style="text-align:right;">Hours</th><th>Notes</th></tr></thead>
+          <tbody>
+            ${orphans.map(a => `<tr>
+              <td>${a.date}</td>
+              <td class="label-cell">${a.cost_code}</td>
+              <td style="text-align:right;">${fmt(a.actual_bcm, 0)}</td>
+              <td style="text-align:right;" class="cost">${a.actual_cost ? fmtMoney(a.actual_cost, 0) : '—'}</td>
+              <td style="text-align:right;">${a.hours_worked || '—'}</td>
+              <td style="font-family:'Barlow',sans-serif;color:var(--text2);font-size:11px;">${a.notes || ''}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <div class="help-block" style="margin-top:10px;color:var(--text2);">These activities happened but weren't planned in Production Supe. Either backfill the plan (for moat completeness) or accept as unplanned work.</div>
+      </div>`;
+    }
+  }
+
+  // Cost decomposition (pit-wide)
+  let totalPrimary = 0, totalAnc = 0, totalLab = 0, totalFuel = 0;
+  sessions.forEach(s => {
+    totalPrimary += s.cost_primary || 0;
+    totalAnc += s.cost_ancillaries || 0;
+    totalLab += s.cost_labour || 0;
+    totalFuel += s.cost_fuel || 0;
+  });
+  const totalAll = totalPrimary + totalAnc + totalLab + totalFuel;
+  if (totalAll > 0) {
+    html += `<div class="section">
+      <div class="section-title">Cost decomposition — pit-wide <span class="section-sub">${fmtMoney(totalAll, 0)} total</span></div>
+      <div class="fleet-grid">
+        <div class="fleet-cell"><div class="fc-label">Primary fleet</div><div class="fc-value">${fmtMoney(totalPrimary, 0)}</div><div class="fc-detail">${totalAll > 0 ? (totalPrimary/totalAll*100).toFixed(0) : 0}% of total</div></div>
+        <div class="fleet-cell"><div class="fc-label">Ancillaries</div><div class="fc-value">${fmtMoney(totalAnc, 0)}</div><div class="fc-detail">${totalAll > 0 ? (totalAnc/totalAll*100).toFixed(0) : 0}%</div></div>
+        <div class="fleet-cell"><div class="fc-label">Operator labour</div><div class="fc-value">${fmtMoney(totalLab, 0)}</div><div class="fc-detail">${totalAll > 0 ? (totalLab/totalAll*100).toFixed(0) : 0}%</div></div>
+        <div class="fleet-cell"><div class="fc-label">Fuel</div><div class="fc-value">${fmtMoney(totalFuel, 0)}</div><div class="fc-detail">${totalAll > 0 ? (totalFuel/totalAll*100).toFixed(0) : 0}% · ${fmt(rollup.total_fuel_L, 0)} L</div></div>
+      </div>
+    </div>`;
+  }
+
+  // Source / metadata
+  html += `<div style="color:var(--text2);font-size:11px;text-align:center;margin-top:18px;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;">
+    Source: ${STATE.source || 'unknown'} · ${STATE.sessions.length} session${STATE.sessions.length > 1 ? 's' : ''} loaded${hasActuals ? ' · ' + STATE.actuals.length + ' actuals' : ''} · Filter: ${STATE.filter_date || 'all dates'}
+  </div>`;
+
+  c.innerHTML = html;
+  bindViewTabs();
+}
+
+// v0.3 — Trends view: multi-day charts + contractor rollup
+function renderTrendsView() {
+  const dates = [...new Set(STATE.sessions.map(s => s.date).filter(Boolean))].sort();
+  if (dates.length === 0) {
+    return `<div class="empty-state"><h2>No date data</h2><p>Load sessions to see trends.</p></div>`;
+  }
+  // Build daily aggregates
+  const daily = dates.map(d => {
+    const ds = STATE.sessions.filter(s => s.date === d);
+    let bcm = 0, cost = 0, fuel_L = 0;
+    let bc = { balanced: 0, dig: 0, truck: 0, dump: 0 };
+    ds.forEach(s => {
+      bcm += s.production_bcm || 0;
+      cost += s.total_cost || 0;
+      fuel_L += s.fuel_L || 0;
+      if (s.bottleneck && bc[s.bottleneck] !== undefined) bc[s.bottleneck]++;
+    });
+    // Match actuals
+    let actual_bcm = 0, actual_cost = 0, matched = 0;
+    if (STATE.actuals.length > 0) {
+      ds.forEach(s => {
+        const a = findActualFor(s);
+        if (a) { matched++; actual_bcm += a.actual_bcm || 0; actual_cost += a.actual_cost || 0; }
+      });
+    }
+    return {
+      date: d, n_ops: ds.length, bcm, cost, fuel_L,
+      unit_cost: bcm > 0 ? cost / bcm : 0,
+      bc,
+      actual_bcm, actual_cost, matched,
+      actual_unit: actual_bcm > 0 ? actual_cost / actual_bcm : 0
+    };
+  });
+  // Contractor rollup — defaults to "SEM Civil" or extracts from cost_code prefix if present
+  const byContractor = {};
+  STATE.sessions.forEach(s => {
+    const c = s.contractor || extractContractorFromCode(s.cost_code) || "SEM Civil";
+    if (!byContractor[c]) byContractor[c] = { ops: 0, bcm: 0, cost: 0, sessions: [] };
+    byContractor[c].ops++;
+    byContractor[c].bcm += s.production_bcm || 0;
+    byContractor[c].cost += s.total_cost || 0;
+    byContractor[c].sessions.push(s);
+  });
+  const contractors = Object.entries(byContractor).map(([name, x]) => ({
+    name, ...x, unit_cost: x.bcm > 0 ? x.cost / x.bcm : 0
+  })).sort((a, b) => b.bcm - a.bcm);
+
+  return `
+    <div class="section">
+      <div class="section-title">Daily trends <span class="section-sub">${dates.length} day${dates.length === 1 ? '' : 's'} · ${STATE.sessions.length} sessions${STATE.actuals.length > 0 ? ' · ' + STATE.actuals.length + ' actuals' : ''}</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div style="background:var(--bg2);padding:14px;border:1px solid var(--border);border-left:3px solid var(--copper);border-radius:0 4px 4px 0;">
+          <div style="font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:11px;color:var(--text2);margin-bottom:8px;">Unit cost over time ($/bcm)</div>
+          <div style="position:relative;height:220px;"><canvas id="chart-cost"></canvas></div>
+        </div>
+        <div style="background:var(--bg2);padding:14px;border:1px solid var(--border);border-left:3px solid var(--copper);border-radius:0 4px 4px 0;">
+          <div style="font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:11px;color:var(--text2);margin-bottom:8px;">Production over time (bcm/shift)</div>
+          <div style="position:relative;height:220px;"><canvas id="chart-bcm"></canvas></div>
+        </div>
+        <div style="background:var(--bg2);padding:14px;border:1px solid var(--border);border-left:3px solid var(--copper);border-radius:0 4px 4px 0;">
+          <div style="font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:11px;color:var(--text2);margin-bottom:8px;">Bottleneck distribution over time</div>
+          <div style="position:relative;height:220px;"><canvas id="chart-bottleneck"></canvas></div>
+        </div>
+        <div style="background:var(--bg2);padding:14px;border:1px solid var(--border);border-left:3px solid var(--copper);border-radius:0 4px 4px 0;">
+          <div style="font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:11px;color:var(--text2);margin-bottom:8px;">Diesel burn over time (L/shift)</div>
+          <div style="position:relative;height:220px;"><canvas id="chart-fuel"></canvas></div>
+        </div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Contractor rollup <span class="section-sub">${contractors.length} contractor${contractors.length === 1 ? '' : 's'}</span></div>
+      <table class="ops-table">
+        <thead><tr><th>Contractor</th><th style="text-align:right;">Operations</th><th style="text-align:right;">Total production</th><th style="text-align:right;">Total cost</th><th style="text-align:right;">Weighted $/bcm</th><th>Share</th></tr></thead>
+        <tbody>
+          ${contractors.map(c => {
+            const sharePct = STATE.sessions.length > 0 ? (c.bcm / contractors.reduce((s, x) => s + x.bcm, 0)) * 100 : 0;
+            return `<tr>
+              <td class="label-cell"><strong>${c.name}</strong></td>
+              <td style="text-align:right;">${c.ops}</td>
+              <td style="text-align:right;">${fmt(c.bcm, 0)} bcm</td>
+              <td style="text-align:right;" class="cost">${fmtMoney(c.cost, 0)}</td>
+              <td style="text-align:right;" class="cost">${fmtMoney(c.unit_cost, 2)}</td>
+              <td><span class="match-bar"><span class="match-fill ok" style="width:${sharePct}%"></span></span> ${sharePct.toFixed(0)}%</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      <div class="help-block" style="margin-top:10px;color:var(--text2);">Contractor field is inferred from cost_code prefix (e.g. "SEM-..." → "SEM Civil") or defaults to "SEM Civil" when absent. Production Supe v1.6 will add an explicit contractor field for multi-contractor sites.</div>
+    </div>
+  `;
+}
+
+// Daily aggregates (used by drawTrendsCharts)
+function _trendsDaily() {
+  const dates = [...new Set(STATE.sessions.map(s => s.date).filter(Boolean))].sort();
+  return dates.map(d => {
+    const ds = STATE.sessions.filter(s => s.date === d);
+    let bcm = 0, cost = 0, fuel_L = 0;
+    let bc = { balanced: 0, dig: 0, truck: 0, dump: 0 };
+    ds.forEach(s => {
+      bcm += s.production_bcm || 0;
+      cost += s.total_cost || 0;
+      fuel_L += s.fuel_L || 0;
+      if (s.bottleneck && bc[s.bottleneck] !== undefined) bc[s.bottleneck]++;
+    });
+    let a_bcm = 0, a_cost = 0, matched = 0;
+    if (STATE.actuals.length > 0) {
+      ds.forEach(s => {
+        const a = findActualFor(s);
+        if (a) { matched++; a_bcm += a.actual_bcm || 0; a_cost += a.actual_cost || 0; }
+      });
+    }
+    return { date: d, bcm, cost, fuel_L, unit_cost: bcm > 0 ? cost / bcm : 0, bc, a_bcm, a_cost, matched, a_unit: a_bcm > 0 ? a_cost / a_bcm : 0 };
+  });
+}
+
+function extractContractorFromCode(code) {
+  if (!code) return null;
+  // Common patterns: "SEM-...", "[SEM]...", "SEM Civil..."
+  const m = code.match(/^([A-Z]{2,5})[\s\-_:\[\]]/);
+  if (m) {
+    const map = { SEM: "SEM Civil", BRW: "BRW", WW: "W Wall and Sons", QUA: "Quarrico", PEN: "Pentacon", KH: "Kent Hire", MOR: "Morevale", NMS: "NMS", SP: "Spencer Mining", UNY: "Unyte", SEE: "SEE Civil" };
+    return map[m[1]] || m[1];
+  }
+  return null;
+}
+
+// Chart.js styling constants matching design language
+const CHART_COLORS = {
+  copper: '#c8833a', copperLight: '#e8a855', ochre: '#d4a843',
+  blue: '#3a6a9a', green: '#4a8a52', red: '#c0402a',
+  text0: '#f0ede6', text1: '#b8b4a8', text2: '#6e6b60',
+  bg2: '#1c1d18', bg3: '#252620', border: '#2e3028'
+};
+
+let _trendCharts = {};
+function drawTrendsCharts() {
+  if (typeof Chart === 'undefined') return;
+  // Destroy any prior charts
+  Object.values(_trendCharts).forEach(c => { try { c.destroy(); } catch (e) {} });
+  _trendCharts = {};
+  const daily = _trendsDaily();
+  if (daily.length === 0) return;
+  const labels = daily.map(d => d.date);
+
+  // Common Chart.js options
+  const baseOpts = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { labels: { color: CHART_COLORS.text1, font: { family: 'Barlow Condensed', size: 11 } } }
+    },
+    scales: {
+      x: { ticks: { color: CHART_COLORS.text2, font: { family: 'DM Mono', size: 10 } }, grid: { color: CHART_COLORS.border } },
+      y: { ticks: { color: CHART_COLORS.text2, font: { family: 'DM Mono', size: 10 } }, grid: { color: CHART_COLORS.border } }
+    }
+  };
+
+  // 1) Unit cost over time
+  const ctxCost = document.getElementById('chart-cost')?.getContext('2d');
+  if (ctxCost) {
+    const datasets = [{ label: 'Planned $/bcm', data: daily.map(d => d.unit_cost.toFixed(2)), borderColor: CHART_COLORS.copperLight, backgroundColor: 'rgba(232, 168, 85, 0.1)', tension: 0.2, pointRadius: 4 }];
+    if (daily.some(d => d.a_unit > 0)) {
+      datasets.push({ label: 'Actual $/bcm', data: daily.map(d => d.a_unit > 0 ? d.a_unit.toFixed(2) : null), borderColor: CHART_COLORS.green, backgroundColor: 'rgba(74, 138, 82, 0.1)', tension: 0.2, pointRadius: 4 });
+    }
+    _trendCharts.cost = new Chart(ctxCost, { type: 'line', data: { labels, datasets }, options: baseOpts });
+  }
+
+  // 2) Production over time
+  const ctxBcm = document.getElementById('chart-bcm')?.getContext('2d');
+  if (ctxBcm) {
+    const datasets = [{ label: 'Planned bcm', data: daily.map(d => d.bcm), backgroundColor: CHART_COLORS.copperLight, borderRadius: 2 }];
+    if (daily.some(d => d.a_bcm > 0)) {
+      datasets.push({ label: 'Actual bcm', data: daily.map(d => d.a_bcm), backgroundColor: CHART_COLORS.green, borderRadius: 2 });
+    }
+    _trendCharts.bcm = new Chart(ctxBcm, { type: 'bar', data: { labels, datasets }, options: baseOpts });
+  }
+
+  // 3) Bottleneck distribution stacked
+  const ctxBn = document.getElementById('chart-bottleneck')?.getContext('2d');
+  if (ctxBn) {
+    _trendCharts.bn = new Chart(ctxBn, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Balanced', data: daily.map(d => d.bc.balanced), backgroundColor: CHART_COLORS.green },
+          { label: 'Dig-constrained', data: daily.map(d => d.bc.dig), backgroundColor: CHART_COLORS.ochre },
+          { label: 'Truck-constrained', data: daily.map(d => d.bc.truck), backgroundColor: CHART_COLORS.red },
+          { label: 'Dump-constrained', data: daily.map(d => d.bc.dump), backgroundColor: CHART_COLORS.copper }
+        ]
+      },
+      options: { ...baseOpts, scales: { x: { ...baseOpts.scales.x, stacked: true }, y: { ...baseOpts.scales.y, stacked: true } } }
+    });
+  }
+
+  // 4) Diesel burn over time
+  const ctxFuel = document.getElementById('chart-fuel')?.getContext('2d');
+  if (ctxFuel) {
+    _trendCharts.fuel = new Chart(ctxFuel, {
+      type: 'line',
+      data: { labels, datasets: [{ label: 'Diesel L/shift', data: daily.map(d => d.fuel_L), borderColor: CHART_COLORS.ochre, backgroundColor: 'rgba(212, 168, 67, 0.1)', tension: 0.2, pointRadius: 4 }] },
+      options: baseOpts
+    });
+  }
+}
+
+// v0.3 — HELP report export: markdown and print
+function _stripHtml(html) { return (html || '').replace(/<[^>]*>/g, ''); }
+
+function exportHelpReportMD(help) {
+  const dateRange = (() => {
+    const dates = [...new Set(STATE.sessions.map(s => s.date).filter(Boolean))].sort();
+    return dates.length === 0 ? 'no dates' : (dates.length === 1 ? dates[0] : `${dates[0]} → ${dates[dates.length - 1]}`);
+  })();
+  const md = `# Pit Boss HELP Report
+
+**Period:** ${dateRange}
+**Sessions:** ${help.n_sessions}${help.n_actuals > 0 ? ` · ${help.n_actuals} actuals reconciled` : ''}
+**Generated:** ${new Date().toISOString().slice(0, 10)}
+
+---
+
+## Highlights
+
+${help.H.length > 0 ? help.H.map(x => `- ${_stripHtml(x)}`).join('\n') : '_No standout positives surfaced yet._'}
+
+## Lowlights
+
+${help.L.length > 0 ? help.L.map(x => `- ${_stripHtml(x)}`).join('\n') : '_No material underperformance flagged._'}
+
+## Emerging issues
+
+${help.E.length > 0 ? help.E.map(x => `- ${_stripHtml(x)}`).join('\n') : '_No recurring patterns yet — keep capturing._'}
+
+## Priorities
+
+${help.P.length > 0 ? help.P.map(x => `- ${_stripHtml(x)}`).join('\n') : '_No urgent reallocation or rebalancing required._'}
+
+## How leadership can help
+
+${help.HELP.length > 0 ? help.HELP.map(x => `- ${_stripHtml(x)}`).join('\n') : '_No specific asks — operations self-sufficient at current scale._'}
+
+---
+
+*Generated by STRATUM Pit Boss v0.3 · HELP report module*
+`;
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `help-report-${new Date().toISOString().slice(0, 10)}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('HELP report exported as markdown');
+}
+
+function printHelpReport(help) {
+  const dates = [...new Set(STATE.sessions.map(s => s.date).filter(Boolean))].sort();
+  const dateRange = dates.length === 0 ? 'no dates' : (dates.length === 1 ? dates[0] : `${dates[0]} → ${dates[dates.length - 1]}`);
+  const w = window.open('', '_blank');
+  if (!w) { toast('Pop-up blocked — allow pop-ups for Print to work'); return; }
+  const list = (arr) => arr.length > 0 ? `<ul>${arr.map(x => `<li>${x}</li>`).join('')}</ul>` : `<p class="empty">No items.</p>`;
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>HELP Report ${dateRange}</title>
+<style>
+  @page { size: A4; margin: 18mm; }
+  body { font-family: 'Helvetica', 'Arial', sans-serif; color: #1a1a1a; line-height: 1.45; font-size: 11pt; max-width: 800px; margin: 0 auto; padding: 20px; }
+  header { border-bottom: 3px solid #c8833a; margin-bottom: 20px; padding-bottom: 14px; }
+  h1 { margin: 0 0 6px; font-size: 22pt; color: #1a1a1a; letter-spacing: -0.01em; }
+  .meta { color: #666; font-size: 10pt; }
+  h2 { margin-top: 24px; margin-bottom: 8px; font-size: 14pt; padding: 6px 12px; border-radius: 3px; }
+  h2.h { background: #e8f3ea; border-left: 4px solid #4a8a52; color: #2a5a32; }
+  h2.l { background: #fbeae6; border-left: 4px solid #c0402a; color: #802818; }
+  h2.e { background: #fbf2dc; border-left: 4px solid #d4a843; color: #8a6a20; }
+  h2.p { background: #fbeed8; border-left: 4px solid #c8833a; color: #8a5818; }
+  h2.help { background: #e2ebf3; border-left: 4px solid #3a6a9a; color: #1a4060; }
+  ul { padding-left: 20px; margin: 8px 0 16px; }
+  li { margin-bottom: 6px; }
+  li strong { color: #1a1a1a; }
+  .empty { color: #999; font-style: italic; margin: 6px 0 16px; padding-left: 12px; }
+  footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid #ddd; color: #888; font-size: 9pt; }
+  .actions { position: fixed; top: 14px; right: 14px; }
+  .actions button { padding: 8px 16px; background: #c8833a; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: 600; }
+  @media print { .actions { display: none; } }
+</style></head><body>
+<div class="actions"><button onclick="window.print()">Print / Save as PDF</button></div>
+<header>
+  <h1>Pit Boss HELP Report</h1>
+  <div class="meta">Period: ${dateRange} · ${help.n_sessions} sessions${help.n_actuals > 0 ? ` · ${help.n_actuals} actuals reconciled` : ''} · Generated ${new Date().toISOString().slice(0, 10)}</div>
+</header>
+<h2 class="h">Highlights</h2>${list(help.H)}
+<h2 class="l">Lowlights</h2>${list(help.L)}
+<h2 class="e">Emerging issues</h2>${list(help.E)}
+<h2 class="p">Priorities</h2>${list(help.P)}
+<h2 class="help">How leadership can help</h2>${list(help.HELP)}
+<footer>STRATUM Pit Boss v0.3 · HELP report module · ASUBS Pty Ltd</footer>
+</body></html>`);
+  w.document.close();
+  // Auto-trigger print dialog after a short delay
+  setTimeout(() => { try { w.print(); } catch (e) {} }, 500);
+}
+
+function bindViewTabs() {
+  document.querySelectorAll('.view-tab').forEach(t => {
+    t.addEventListener('click', () => {
+      STATE.view = t.dataset.view;
+      render();
+    });
+  });
+}
+
+// =============================================================
+// EVENTS
+// =============================================================
+
+document.getElementById('csv-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => loadFromCSV(ev.target.result);
+  reader.readAsText(file);
+});
+
+document.getElementById('tracker-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => loadTrackerCSV(ev.target.result);
+  reader.readAsText(file);
+});
+
+document.getElementById('btn-try-storage').addEventListener('click', loadFromLocalStorage);
+document.getElementById('btn-cloud').addEventListener('click', loadFromCloud);
+// Auto-load from cloud on first visit
+setTimeout(() => { if (STATE.sessions.length === 0) loadFromCloud(); }, 200);
+
+document.getElementById('filter-date').addEventListener('change', (e) => {
+  STATE.filter_date = e.target.value || null;
+  render();
+});
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  if (!confirm('Clear all loaded sessions and actuals from this view?')) return;
+  STATE.sessions = [];
+  STATE.actuals = [];
+  STATE.source = null;
+  STATE.filter_date = null;
+  document.getElementById('filter-date').value = '';
+  document.getElementById('csv-input').value = '';
+  document.getElementById('tracker-input').value = '';
+  render();
+  toast('View cleared');
+});
+
+// Boot
+render();
+</script>
+
+</body>
+</html>
