@@ -794,6 +794,20 @@
         <div class="obs-list" id="obs-list"></div>
       </div>
 
+      <!-- ============ DAILY HELP REPORT (v1.9) ============ -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Daily HELP report</span>
+          <span class="card-subtitle">rolls up to Pit Boss · weekly RAR</span>
+        </div>
+        <div class="help-block" style="margin-top:0;margin-bottom:12px;padding:8px 10px;background:var(--bg2);border-left:2px solid var(--copperDim);border-radius:0 3px 3px 0;">
+          Drop a quick line into any category as the shift unfolds. Empty categories are fine. <strong>How can I help / What help from other departments</strong> is the most valuable — that's what feeds the leadership ask in Stevie's weekly RAR.
+        </div>
+        <div id="help-grid-supe" style="display:grid;grid-template-columns:1fr;gap:10px;">
+          <!-- populated by renderHelpEntries() -->
+        </div>
+      </div>
+
     </div><!-- /tab-inspection -->
 
   </section>
@@ -1161,21 +1175,23 @@ const OPERATOR_RATES_DEFAULT = {
 
 // Material types — drives LHEX density A and swell B (standard mining materials)
 const MATERIAL_TYPES = {
-  topsoil:        { name: "Topsoil",              density: 1.50,  swell: 0.25 },
-  ob_weathered:   { name: "OB — Weathered",       density: 1.95,  swell: 0.30 },
-  ob_light:       { name: "OB — Lower density",   density: 2.022, swell: 0.35 },
-  ob_mean:        { name: "OB — Mean density",    density: 2.295, swell: 0.35 },
-  ob_heavy:       { name: "OB — Upper density",   density: 2.565, swell: 0.35 },
-  ob_fresh:       { name: "OB — Fresh / unweathered", density: 2.50, swell: 0.40 },
-  rock_blasted:   { name: "Rock — blasted hard",  density: 2.65,  swell: 0.40 },
-  sandstone:      { name: "Sandstone",            density: 2.40,  swell: 0.35 },
-  mudstone:       { name: "Mudstone",             density: 2.30,  swell: 0.30 },
-  shale:          { name: "Shale",                density: 2.50,  swell: 0.30 },
-  ironstone:      { name: "Ironstone / banded",   density: 3.20,  swell: 0.40 },
-  rom_coal:       { name: "ROM Coal",             density: 1.35,  swell: 0.35 },
-  clean_coal:     { name: "Clean coal (washed)",  density: 1.20,  swell: 0.30 },
-  clay:           { name: "Clay",                 density: 1.90,  swell: 0.30 },
-  sand_gravel:    { name: "Sand / gravel",        density: 1.65,  swell: 0.15 }
+  // v1.8.2 — heap = effective tray volume as multiple of SAE 2:1.
+  // Light/loose material heaps higher; dense rock doesn't heap.
+  topsoil:        { name: "Topsoil",              density: 1.50,  swell: 0.25, heap: 1.12 },
+  ob_weathered:   { name: "OB — Weathered",       density: 1.95,  swell: 0.30, heap: 1.10 },
+  ob_light:       { name: "OB — Lower density",   density: 2.022, swell: 0.35, heap: 1.08 },
+  ob_mean:        { name: "OB — Mean density",    density: 2.295, swell: 0.35, heap: 1.07 },
+  ob_heavy:       { name: "OB — Upper density",   density: 2.565, swell: 0.35, heap: 1.05 },
+  ob_fresh:       { name: "OB — Fresh / unweathered", density: 2.50, swell: 0.40, heap: 1.05 },
+  rock_blasted:   { name: "Rock — blasted hard",  density: 2.65,  swell: 0.40, heap: 1.03 },
+  sandstone:      { name: "Sandstone",            density: 2.40,  swell: 0.35, heap: 1.05 },
+  mudstone:       { name: "Mudstone",             density: 2.30,  swell: 0.30, heap: 1.06 },
+  shale:          { name: "Shale",                density: 2.50,  swell: 0.30, heap: 1.05 },
+  ironstone:      { name: "Ironstone / banded",   density: 3.20,  swell: 0.40, heap: 1.02 },
+  rom_coal:       { name: "ROM Coal",             density: 1.35,  swell: 0.35, heap: 1.10 },
+  clean_coal:     { name: "Clean coal (washed)",  density: 1.20,  swell: 0.30, heap: 1.10 },
+  clay:           { name: "Clay",                 density: 1.90,  swell: 0.30, heap: 1.06 },
+  sand_gravel:    { name: "Sand / gravel",        density: 1.65,  swell: 0.15, heap: 1.10 }
 };
 
 // Dig conditions — applies to dig cycle (J). Recalibrated v1.2 per Stevie's feedback:
@@ -1434,13 +1450,28 @@ function calc() {
   const L = truck.payload_t;      // truck payload capacity tonnes
   const N = truck.tray_lcm_2to1;  // truck tray lcm 2:1 SAE
 
-  // OPTIMAL PASSES — bind by whichever constraint hits first
-  const passes_by_weight = Math.floor(L / H);            // can't exceed truck payload
-  const passes_by_volume = Math.floor(N / F);            // can't exceed tray volume
-  const O = Math.max(1, Math.min(passes_by_weight, passes_by_volume));  // integer passes
+  // v1.8.2 — PARTIAL-PASS TOP-OFF
+  // Operators add a partial last pass (typically 0.3-0.8 of a bucket) to reach ~95% of nameplate.
+  // Tray volume is heaped above SAE 2:1 for loose materials (heap factor per MATERIAL_TYPES).
+  const heap_factor_main = mat.heap || 1.05;
+  const N_eff_main = N * heap_factor_main;                  // heaped tray volume (lcm)
+  const passes_by_weight_max = Math.floor(L / H);           // integer max by weight
+  const passes_by_volume_max = Math.floor(N_eff_main / F);  // integer max by heaped volume
+  const O_int = Math.max(1, Math.min(passes_by_weight_max, passes_by_volume_max));
+  // Partial pass — limited by remaining weight, volume, and a max of 0.8 of a pass
+  const remaining_weight_t = L - (O_int * H);
+  const remaining_volume_lcm = N_eff_main - (O_int * F);
+  const partial_max_w = remaining_weight_t / H;
+  const partial_max_v = remaining_volume_lcm / F;
+  const partial_pass = Math.max(0, Math.min(0.8, partial_max_w, partial_max_v));
+  // Only add the partial pass if integer fill is below 95% target (otherwise not worth the time)
+  const target_payload_t = L * 0.95;
+  const partial_useful = (O_int * H) < target_payload_t;
+  const O = partial_useful ? (O_int + partial_pass) : O_int;
+  const truck_fill_pct = (O * H) / L;                       // payload as % of nameplate
 
   // PAYLOAD ACTUAL
-  const P = O * H;                // truck payload tonnes
+  const P = O * H;                // truck payload tonnes (now fractional)
   const Q = O * F;                // truck payload lcm
   const payload_bcm_calculated = Q / (1 + B);
   // v1.2: supervisor can override calculated payload
@@ -1478,12 +1509,16 @@ function calc() {
   const tr_loaded_dec = Math.max(0.005, tr_loaded / 100);  // decimal, floored
   const tr_empty_dec  = Math.max(0.005, tr_empty / 100);
   // GMW in kg, HP in horsepower → v in km/h (per Cat: v = 273.75 × HP / (GMW × TR))
+  // v1.8.2 — Gear-shift loss factor for steep grades (TR > 14%): real trucks downshift into
+  // low gear and lose 15% to the formula's predicted speed. Caps the optimistic flat-road formula.
   const v_loaded_formula = (273.75 * truck.hp_grade) / (truck.gmw_loaded_kg * tr_loaded_dec);
   const v_empty_formula  = tr_empty <= 0
     ? truck.v_max_kmh
     : (273.75 * truck.hp_grade) / (truck.gmw_empty_kg * tr_empty_dec);
-  const v_steady_loaded = Math.min(truck.v_max_kmh, Math.max(5, v_loaded_formula));
-  const v_steady_empty  = Math.min(truck.v_max_kmh, Math.max(10, v_empty_formula));
+  const gear_shift_loaded = tr_loaded_dec > 0.14 ? 0.85 : 1.0;
+  const gear_shift_empty  = (tr_empty_dec > 0.14 && tr_empty > 0) ? 0.85 : 1.0;
+  const v_steady_loaded = Math.min(truck.v_max_kmh, Math.max(5, v_loaded_formula * gear_shift_loaded));
+  const v_steady_empty  = Math.min(truck.v_max_kmh, Math.max(10, v_empty_formula * gear_shift_empty));
 
   // Distance-dependent avg-speed-vs-steady-speed correction (shorter haul = bigger accel/decel loss)
   const accel_loss_fraction_loaded = Math.min(0.35, 0.5 / Math.max(0.5, s.distance_km));
@@ -1519,18 +1554,33 @@ function calc() {
     if (!tc) return null;
     const L_c = tc.payload_t;
     const N_c = tc.tray_lcm_2to1;
-    const O_c = Math.max(1, Math.min(Math.floor(L_c / H), Math.floor(N_c / F)));
+    // v1.8.2 — Partial-pass top-off per class (same logic as main calc)
+    const heap_c = mat.heap || 1.05;
+    const N_eff_c = N_c * heap_c;
+    const passes_w_c = Math.floor(L_c / H);
+    const passes_v_c = Math.floor(N_eff_c / F);
+    const O_int_c = Math.max(1, Math.min(passes_w_c, passes_v_c));
+    const rem_w_c = L_c - (O_int_c * H);
+    const rem_v_c = N_eff_c - (O_int_c * F);
+    const partial_c = Math.max(0, Math.min(0.8, rem_w_c / H, rem_v_c / F));
+    const target_payload_c = L_c * 0.95;
+    const partial_useful_c = (O_int_c * H) < target_payload_c;
+    const O_c = partial_useful_c ? (O_int_c + partial_c) : O_int_c;
+    const fill_pct_c = (O_c * H) / L_c;  // truck fill as % of nameplate
     const P_c = O_c * H;
     const Q_c = O_c * F;
     const payload_bcm_c = Q_c / (1 + B);
-    const W_c = T_exch + J + (J * (O_c - 1));  // total load cycle for this truck
+    const W_c = T_exch + J * O_c;  // total load cycle for this truck (fractional passes accepted)
     // Cycle time on the haul road: speed varies by class
     const tr_loaded_dec_c = Math.max(0.005, (road.rr_pct + s.grade_pct) / 100);
     const tr_empty_dec_c  = Math.max(0.005, (road.rr_pct - s.grade_pct) / 100);
     const v_loaded_formula_c = (273.75 * tc.hp_grade) / (tc.gmw_loaded_kg * tr_loaded_dec_c);
     const v_empty_formula_c  = (road.rr_pct - s.grade_pct) <= 0 ? tc.v_max_kmh : (273.75 * tc.hp_grade) / (tc.gmw_empty_kg * tr_empty_dec_c);
-    const v_steady_loaded_c = Math.min(tc.v_max_kmh, Math.max(5, v_loaded_formula_c));
-    const v_steady_empty_c  = Math.min(tc.v_max_kmh, Math.max(10, v_empty_formula_c));
+    // v1.8.2 — Gear-shift loss factor for steep grades
+    const gs_loaded_c = tr_loaded_dec_c > 0.14 ? 0.85 : 1.0;
+    const gs_empty_c  = (tr_empty_dec_c > 0.14 && (road.rr_pct - s.grade_pct) > 0) ? 0.85 : 1.0;
+    const v_steady_loaded_c = Math.min(tc.v_max_kmh, Math.max(5, v_loaded_formula_c * gs_loaded_c));
+    const v_steady_empty_c  = Math.min(tc.v_max_kmh, Math.max(10, v_empty_formula_c * gs_empty_c));
     const accel_loss_loaded_c = Math.min(0.35, 0.5 / Math.max(0.5, s.distance_km));
     const accel_loss_empty_c  = Math.min(0.30, 0.4 / Math.max(0.5, s.distance_km));
     const v_avg_loaded_c = v_steady_loaded_c * (1 - accel_loss_loaded_c);
@@ -1546,7 +1596,7 @@ function calc() {
     const fuel_per_unit_L = tc.fuel_lph * s.planned_smu;
     return {
       class: m.class, count: m.count, truck: tc,
-      O: O_c, payload_bcm: payload_bcm_c, P: P_c, Q: Q_c, W: W_c,
+      O: O_c, fill_pct: fill_pct_c, payload_bcm: payload_bcm_c, P: P_c, Q: Q_c, W: W_c,
       v_steady_loaded: v_steady_loaded_c, v_steady_empty: v_steady_empty_c,
       v_avg_loaded: v_avg_loaded_c, v_avg_empty: v_avg_empty_c,
       t_load: t_load_c, t_haul_loaded: t_haul_loaded_c, t_haul_empty: t_haul_empty_c,
@@ -1796,6 +1846,8 @@ function calc() {
     class_metrics, using_mix, total_trucks_in_mix, avg_payload_bcm,
     weighted_O, weighted_t_cycle_no_queue, W_mix, Z_mix, BB_mix, DD_mix,
     truck_mix: s.truck_mix,
+    // v1.8.2 — Truck fill metrics
+    truck_fill_pct, heap_factor: heap_factor_main, partial_pass, O_int,
     // Pareto / loss attribution
     losses: { z_to_bb_loss, bb_to_dd_loss, truck_constrain_loss, exc_op_loss, trk_op_loss, face_loss }
   };
@@ -1822,6 +1874,93 @@ function opLabel(id) { return { lvl2_multi: "Lvl 2 multi", lvl1: "Lvl 1", inexpe
 // =============================================================
 
 // =============================================================
+// v1.9 — HELP entries: categories the supervisor fills in during a shift.
+// Rolls into session.inspection.help_entries on save and into raw_json on cloud sync.
+const HELP_CATEGORIES = [
+  { id: 'highlights',    label: 'Highlights',           tone: 'green',  hint: 'What went well today' },
+  { id: 'lowlights',     label: 'Lowlights',            tone: 'red',    hint: 'What went wrong / hit production' },
+  { id: 'emerging',      label: 'Emerging issues',      tone: 'ochre',  hint: 'Risks brewing for next shift / week' },
+  { id: 'priorities',    label: 'Priorities (next)',    tone: 'copper', hint: 'What you will focus on next shift' },
+  { id: 'help_needed',   label: 'How I can be helped',  tone: 'blue',   hint: 'Help needed from other departments — the leadership ask' },
+  { id: 'actions',       label: 'Arising actions',      tone: 'copperLight', hint: 'Action items with owner / due date' },
+];
+
+function ensureHelpEntries() {
+  if (!STATE.inspection) STATE.inspection = {};
+  if (!STATE.inspection.help_entries) STATE.inspection.help_entries = {};
+  HELP_CATEGORIES.forEach(c => {
+    if (!Array.isArray(STATE.inspection.help_entries[c.id])) STATE.inspection.help_entries[c.id] = [];
+  });
+}
+
+function renderHelpEntries() {
+  ensureHelpEntries();
+  const grid = document.getElementById('help-grid-supe');
+  if (!grid) return;
+  grid.innerHTML = HELP_CATEGORIES.map(c => {
+    const entries = STATE.inspection.help_entries[c.id] || [];
+    const tone = c.tone;
+    const borderColor = ({ green: 'var(--green)', red: 'var(--red)', ochre: 'var(--ochre)', copper: 'var(--copper)', blue: 'var(--blue)', copperLight: 'var(--copperLight)' })[tone] || 'var(--border)';
+    const titleColor = borderColor;
+    return `<div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${borderColor};padding:10px 12px;border-radius:0 3px 3px 0;">
+      <div style="font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:0.10em;font-weight:600;font-size:12px;color:${titleColor};display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;">
+        <span>${c.label}</span>
+        <span style="font-family:'Barlow',sans-serif;color:var(--text2);font-size:10.5px;font-weight:400;">${c.hint}</span>
+      </div>
+      <ul style="list-style:none;padding:0;margin:0;font-family:'Barlow',sans-serif;font-size:13px;color:var(--text0);">
+        ${entries.map((entry, i) => `<li style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:4px 0;border-bottom:1px dashed var(--border);">
+          <span style="line-height:1.4;">▸ ${escapeHtml(entry)}</span>
+          <button data-help-del="${c.id}:${i}" type="button" style="background:transparent;border:none;color:var(--text2);font-size:14px;cursor:pointer;padding:0 4px;">×</button>
+        </li>`).join('')}
+      </ul>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <input type="text" data-help-input="${c.id}" placeholder="Add ${c.label.toLowerCase()}…" style="flex:1;padding:6px 8px;background:var(--bg1);border:1px solid var(--border);color:var(--text0);font-family:'Barlow',sans-serif;font-size:12.5px;border-radius:3px;"/>
+        <button data-help-add="${c.id}" type="button" style="background:var(--copperDim);border:1px solid var(--copper);color:var(--text0);padding:6px 12px;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:10.5px;font-weight:600;cursor:pointer;border-radius:3px;">+ Add</button>
+      </div>
+    </div>`;
+  }).join('');
+  // Wire add buttons
+  grid.querySelectorAll('button[data-help-add]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cat = btn.dataset.helpAdd;
+      const input = grid.querySelector(`input[data-help-input="${cat}"]`);
+      if (!input) return;
+      const text = (input.value || '').trim();
+      if (!text) return;
+      STATE.inspection.help_entries[cat].push(text);
+      input.value = '';
+      persistState();
+      renderHelpEntries();
+    });
+  });
+  // Wire Enter key on inputs
+  grid.querySelectorAll('input[data-help-input]').forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const cat = input.dataset.helpInput;
+        const btn = grid.querySelector(`button[data-help-add="${cat}"]`);
+        if (btn) btn.click();
+      }
+    });
+  });
+  // Wire delete buttons
+  grid.querySelectorAll('button[data-help-del]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const [cat, idx] = btn.dataset.helpDel.split(':');
+      const i = parseInt(idx);
+      STATE.inspection.help_entries[cat].splice(i, 1);
+      persistState();
+      renderHelpEntries();
+    });
+  });
+}
+
+// Lightweight HTML escape (defensive — inputs are supervisor text)
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
 // v1.6 — INSPECTION TAB
 // =============================================================
 
@@ -2578,13 +2717,18 @@ function findOptimalConfig() {
 
       const r = calc();
 
-      // Per-class pass viability check — reject if any class has unviable passes for this excavator
+      // Per-class pass viability check — uses rounded pass count for viability flag
       const classViability = (r.class_metrics || []).map(c => ({
-        class: c.class, count: c.count, passes: c.O, flag: passViabilityFlag(c.O)
+        class: c.class, count: c.count, passes: c.O, fill_pct: c.fill_pct,
+        flag: passViabilityFlag(Math.round(c.O))
       }));
       const anyReject = classViability.some(c => c.flag === 'reject');
       if (anyReject) return;
       const worstFlag = classViability.find(c => c.flag !== 'ideal')?.flag || 'ideal';
+      // Average truck fill across the mix (weighted by count)
+      const total_count = classViability.reduce((s, c) => s + c.count, 0);
+      const avg_fill_pct = total_count > 0 ?
+        classViability.reduce((s, c) => s + c.fill_pct * c.count, 0) / total_count : 0;
 
       // Display string: "2×789 + 1×777"
       const mixStr = mix.filter(m => m.count > 0).map(m => `${m.count}×${m.class}`).join(' + ');
@@ -2599,7 +2743,8 @@ function findOptimalConfig() {
         total_cost: r.total_cost_visible,
         bottleneck: r.bottleneck,
         match_factor: r.match_factor,
-        passes_summary: classViability.map(c => `${c.count}×${c.class}@${c.passes}p`).join(' / '),
+        passes_summary: classViability.map(c => `${c.count}×${c.class}@${c.passes.toFixed(1)}p·${(c.fill_pct*100).toFixed(0)}%`).join(' / '),
+        avg_fill_pct,
         worstFlag,
         avg_payload_bcm: r.avg_payload_bcm || r.payload_bcm,
         dozer_constrained: !!r.dozer_constrained,
@@ -2805,6 +2950,7 @@ function renderTruckMix() {
 function render() {
   persistState();   // save on every render — invisible to user
   renderTruckMix();  // v1.8 — keep mix UI in sync
+  renderHelpEntries();  // v1.9 — keep HELP cards in sync
   const r = calc();
   const ro = document.getElementById('readout');
 
@@ -2880,7 +3026,7 @@ function render() {
       <div class="metric">
         <div class="metric-label">Truck cycle time</div>
         <div class="metric-value">${fmtTime(r.cycle.t_cycle)}</div>
-        <div class="metric-detail">min/truck · ${r.O} passes × ${(r.J).toFixed(0)}s</div>
+        <div class="metric-detail">min/truck · ${(r.O || 0).toFixed(1)} passes × ${(r.J).toFixed(0)}s</div>
       </div>
       <div class="metric">
         <div class="metric-label">Trucks needed for balance</div>
@@ -2898,7 +3044,7 @@ function render() {
     <div class="alert-box info">
       <div class="alert-title">Crew brief</div>
       <div class="alert-text">
-        Excavator targets <strong>${r.O} passes</strong> per truck (cycle ${r.J.toFixed(0)}s × ${r.O} = ${(r.O * r.J / 60).toFixed(1)} min at the face).
+        Excavator targets <strong>${(r.O || 0).toFixed(1)} passes</strong> per truck (cycle ${r.J.toFixed(0)}s × ${r.O} = ${(r.O * r.J / 60).toFixed(1)} min at the face).
         Truck payload <strong>${r.payload_bcm.toFixed(1)} bcm</strong>${r.using_override ? ' (supervisor override)' : ''}.
         Each truck does <strong>${r.loads_per_truck.toFixed(0)} loads</strong> over ${r.planned_smu.toFixed(1)} SMU
         (fleet total <strong>${r.total_loads_shift.toFixed(0)} loads</strong>) to hit the shift target of <strong>${fmt(r.production_bcm, 0)} bcm</strong>.
@@ -3151,7 +3297,7 @@ function openSaveModal() {
     Predicted: <strong>${fmt(r.bcm_per_smu, 0)} bcm/SMU × ${r.planned_smu.toFixed(1)} SMU = ${fmt(r.production_bcm, 0)} bcm</strong><br>
     Cost: <strong>${fmtMoney(r.cost_per_bcm_visible, 2)}/bcm</strong> (primary alone ${fmtMoney(r.cost_per_bcm_primary, 2)})<br>
     Shift total: <strong>${fmtMoney(r.total_cost_visible, 0)}</strong> · fuel ${fmt(r.total_fuel_L, 0)} L (${fmt(r.total_fuel_lph, 0)} L/hr)<br>
-    Bottleneck: <strong>${bottleneckLabel(r.bottleneck)}</strong> · match ${r.match_factor.toFixed(2)} · ${r.O} passes · ${r.loads_per_truck.toFixed(0)} loads/truck
+    Bottleneck: <strong>${bottleneckLabel(r.bottleneck)}</strong> · match ${r.match_factor.toFixed(2)} · ${(r.O || 0).toFixed(1)} passes · ${r.loads_per_truck.toFixed(0)} loads/truck
   `;
   // Loss reasons checkbox grid
   const lr = document.getElementById('modal-loss-reasons');

@@ -561,12 +561,39 @@ function pitRollup(sessions) {
 }
 
 // ============================================================
+// v1.9 — defensive HTML escape for supervisor-entered text
+function escapeHtmlPB(s) {
+  return String(s || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
 // HELP REPORT — Highlights / Lowlights / Emerging / Priorities / How you can help
 // Runs over the entire loaded dataset (not the date filter).
 // ============================================================
 function buildHelpReport(allSessions) {
   const H = [], L = [], E = [], P = [], HELP = [];
   if (allSessions.length === 0) return { H, L, E, P, HELP, n_sessions: 0, n_actuals: 0 };
+
+  // v1.9 — Pull supervisor-entered HELP entries from each session
+  // Sessions cloud-loaded have raw_json embedded; CSV-loaded sessions don't.
+  allSessions.forEach(s => {
+    // Try multiple locations: cloud raw_json, localStorage inspection field
+    const insp = s.inspection || (s.raw_json && s.raw_json.inspection) || null;
+    if (!insp || !insp.help_entries) return;
+    const sup = s.supervisor || (s.raw_json && s.raw_json.supervisor) || 'unknown supervisor';
+    const date = s.date || '';
+    const tag = `<em style="color:var(--text2);font-size:11px;">— ${escapeHtmlPB(sup)}, ${date}</em>`;
+    const he = insp.help_entries;
+    (he.highlights || []).forEach(t => H.push(`${escapeHtmlPB(t)} ${tag}`));
+    (he.lowlights || []).forEach(t => L.push(`${escapeHtmlPB(t)} ${tag}`));
+    (he.emerging || []).forEach(t => E.push(`${escapeHtmlPB(t)} ${tag}`));
+    (he.priorities || []).forEach(t => P.push(`${escapeHtmlPB(t)} ${tag}`));
+    (he.help_needed || []).forEach(t => HELP.push(`${escapeHtmlPB(t)} ${tag}`));
+    // arising actions go into P as "[ACTION] text"
+    (he.actions || []).forEach(t => P.push(`<strong>[ACTION]</strong> ${escapeHtmlPB(t)} ${tag}`));
+  });
+
+  // After supervisor-entered items, the inferred items get appended below.
+
 
   const r = pitRollup(allSessions);
   const bc = r.bottleneck_counts;
