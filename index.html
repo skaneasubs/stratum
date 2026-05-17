@@ -1458,6 +1458,9 @@ function calc() {
   const passes_by_weight_max = Math.floor(L / H);           // integer max by weight
   const passes_by_volume_max = Math.floor(N_eff_main / F);  // integer max by heaped volume
   const O_int = Math.max(1, Math.min(passes_by_weight_max, passes_by_volume_max));
+  // v1.8.2 backward-compat aliases for downstream code that still references the old names
+  const passes_by_weight = passes_by_weight_max;
+  const passes_by_volume = passes_by_volume_max;
   // Partial pass — limited by remaining weight, volume, and a max of 0.8 of a pass
   const remaining_weight_t = L - (O_int * H);
   const remaining_volume_lcm = N_eff_main - (O_int * F);
