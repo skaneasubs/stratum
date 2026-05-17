@@ -3087,9 +3087,11 @@ function updateSessionStatus() {
   const el = document.getElementById('session-status');
   if (!el) return;
   const n = loadSessions().length;
-  el.innerHTML = n === 0
+  const base = n === 0
     ? 'No sessions captured yet. Hit <strong>Save Session</strong> to log this plan and (optionally) capture actuals later.'
     : `<strong>${n}</strong> session${n > 1 ? 's' : ''} captured in browser storage. Export CSV to take a snapshot or feed it back to the moat dataset.`;
+  el.innerHTML = base + '<div id="cloud-status" style="margin-top:8px;font-size:11px;color:var(--text2)">cloud ready</div>';
+  if (typeof updateSyncBadge === 'function') updateSyncBadge();
 }
 
 function exportCSV() {
