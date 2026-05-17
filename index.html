@@ -569,22 +569,18 @@
       <div class="card-header">
         <span class="card-title">Truck Fleet</span>
       </div>
-      <div class="field">
-        <span class="field-label">Truck class</span>
-        <div class="field-input">
-          <select id="in-truck-class"></select>
+      <!-- v1.8 — Mixed fleet editor. Each class has its own count row. -->
+      <div class="field" style="display:block;">
+        <span class="field-label" style="margin-bottom:6px;display:block;">Truck mix <span style="color:var(--text2);font-weight:normal;font-size:11px;">(set count = 0 to exclude a class)</span></span>
+        <div id="truck-mix-rows" style="display:flex;flex-direction:column;gap:6px;">
+          <!-- populated by renderTruckMix() -->
         </div>
-      </div>
-      <div class="field">
-        <span class="field-label">Truck count</span>
-        <div class="field-input">
-          <div class="number-stepper">
-            <button onclick="adjustTruckCount(-1)">−</button>
-            <input type="number" id="in-truck-count" min="1" max="20" value="4"/>
-            <button onclick="adjustTruckCount(1)">+</button>
-          </div>
-          <span class="field-unit">units</span>
+        <div id="truck-mix-summary" style="margin-top:8px;padding:8px 10px;background:var(--bg1);border-left:3px solid var(--copperDim);font-family:'DM Mono',monospace;font-size:11px;color:var(--text1);">
+          <!-- populated by renderTruckMix() -->
         </div>
+        <!-- Legacy fallback select (hidden but kept for back-compat with optimiser apply / save flow) -->
+        <select id="in-truck-class" style="display:none;"></select>
+        <input type="number" id="in-truck-count" style="display:none;" value="4"/>
       </div>
       <div class="field">
         <span class="field-label">Truck operator</span>
@@ -1100,14 +1096,27 @@ const ANCILLARY_FLEET = {
     rate_per_hr: 200, fuel_lph: 85,
     default_active: true, default_util: 0.80,
     needs_operator: true,
-    role: "Keep dig face clean — supports excavator productivity"
+    role: "Keep dig face clean — supports excavator productivity",
+    // v1.8 — selectable model. spread_rate is per dozer model in bcm/hr (for dump-dozer bottleneck check)
+    model_options: {
+      D11: { label: "CAT D11", rate_per_hr: 260, fuel_lph: 105, spread_rate_bcm_hr: 900 },
+      D10: { label: "CAT D10", rate_per_hr: 200, fuel_lph: 85,  spread_rate_bcm_hr: 600 },
+      D9:  { label: "CAT D9",  rate_per_hr: 150, fuel_lph: 70,  spread_rate_bcm_hr: 400 },
+    },
+    default_model: "D10",
   },
   dump_dozer: {
     name: "Dump Dozer", default_plant_id: "DZ4231", default_plant_label: "CAT D10",
     rate_per_hr: 200, fuel_lph: 85,
     default_active: true, default_util: 0.80,
     needs_operator: true,
-    role: "Maintain dump face and tip-head"
+    role: "Maintain dump face and tip-head",
+    model_options: {
+      D11: { label: "CAT D11", rate_per_hr: 260, fuel_lph: 105, spread_rate_bcm_hr: 900 },
+      D10: { label: "CAT D10", rate_per_hr: 200, fuel_lph: 85,  spread_rate_bcm_hr: 600 },
+      D9:  { label: "CAT D9",  rate_per_hr: 150, fuel_lph: 70,  spread_rate_bcm_hr: 400 },
+    },
+    default_model: "D10",
   },
   water_cart: {
     name: "Water Cart", default_plant_id: "WC2013", default_plant_label: "Heavy Rigid",
@@ -1291,8 +1300,16 @@ const STATE = {
   dump: "open_spoil",
   dump_width: "wide",
   // Trucks
-  truck_class: "785",
-  truck_count: 4,
+  truck_class: "785",  // legacy single-class field (preserved for backward compat)
+  truck_count: 4,      // legacy total field (computed from truck_mix below if mix is used)
+  // v1.8 — mixed fleet. Each entry: {class: '789', count: 2}. Empty count = class not in mix.
+  truck_mix: [
+    { class: "793", count: 0 },
+    { class: "789", count: 0 },
+    { class: "785", count: 4 },
+    { class: "777", count: 0 },
+    { class: "773", count: 0 },
+  ],
   truck_operator: "lvl2_multi",
   manual_bcm_override: null,   // v1.2: supervisor can override calculator's payload_bcm
   // v1.3 — Ancillaries (initialised from ANCILLARY_FLEET defaults at boot)
@@ -1375,13 +1392,22 @@ function calc() {
       if (sel) sel.value = firstAvail;
     }
   }
-  // Same for truck class
-  if (s.equipment_availability?.truck_classes && s.equipment_availability.truck_classes[s.truck_class]?.available === false) {
-    const firstAvail = Object.entries(s.equipment_availability.truck_classes).find(([id, cfg]) => cfg.available && cfg.count > 0)?.[0];
-    if (firstAvail && firstAvail !== s.truck_class) {
-      s.truck_class = firstAvail;
-      const sel = document.getElementById('in-truck-class');
-      if (sel) sel.value = firstAvail;
+  // v1.8 — Sync legacy single-class field from truck_mix (dominant class for display purposes)
+  if (Array.isArray(s.truck_mix)) {
+    const active = s.truck_mix.filter(m => m.count > 0).sort((a,b) => b.count - a.count);
+    if (active.length > 0 && s.truck_class !== active[0].class) {
+      s.truck_class = active[0].class;
+    }
+    // sum truck_count from mix
+    s.truck_count = s.truck_mix.reduce((sum, m) => sum + (m.count > 0 ? m.count : 0), 0) || 1;
+  }
+  // Legacy: same for single truck class (if no mix or single-class fallback)
+  if (!Array.isArray(s.truck_mix) || s.truck_mix.filter(m => m.count > 0).length === 0) {
+    if (s.equipment_availability?.truck_classes && s.equipment_availability.truck_classes[s.truck_class]?.available === false) {
+      const firstAvail = Object.entries(s.equipment_availability.truck_classes).find(([id, cfg]) => cfg.available && cfg.count > 0)?.[0];
+      if (firstAvail && firstAvail !== s.truck_class) {
+        s.truck_class = firstAvail;
+      }
     }
   }
   const exc = EXCAVATORS[s.excavator];
@@ -1480,33 +1506,101 @@ function calc() {
   // No-queue cycle time (one truck round trip if it never queues)
   const t_cycle_no_queue = t_spot + t_load + t_haul_loaded + t_ramp_loaded + t_dump + t_haul_empty + t_ramp_empty + t_intersection;
 
-  // Trucks needed for balance at PRIME rate DD (accounting for excavator delays)
-  // Excavator loads at DD/payload_bcm loads/hr → mean inter-arrival = 60 × payload_bcm / DD min
-  // Each truck cycles at t_cycle_no_queue, so trucks needed = t_cycle_no_queue / inter_arrival
-  // = (t_cycle_no_queue × DD) / (60 × payload_bcm)
-  const trucks_needed_balanced = (t_cycle_no_queue * DD) / (60 * payload_bcm);
-  const match_factor = s.truck_count / trucks_needed_balanced;
+  // v1.8 — MIXED FLEET AGGREGATION
+  // For each truck class in the mix, compute per-class cycle physics (passes, payload, cycle time, throughput).
+  // Then aggregate against the dig unit. The dig unit's DD is the cap; total truck throughput hits it.
+  const mix_entries = Array.isArray(s.truck_mix) ? s.truck_mix.filter(m => m.count > 0) : [];
+  const using_mix = mix_entries.length > 1 || (mix_entries.length === 1 && mix_entries[0].class !== s.truck_class);
+  const effective_mix = mix_entries.length > 0 ? mix_entries : [{ class: s.truck_class, count: s.truck_count }];
 
-  // Truck-side throughput at no-queue cycle (theoretical if excavator infinite)
-  const truck_bcm_hr_no_queue = payload_bcm * (60 / t_cycle_no_queue) * s.truck_count;
+  // Per-class metrics array
+  const class_metrics = effective_mix.map(m => {
+    const tc = TRUCK_CLASSES[m.class];
+    if (!tc) return null;
+    const L_c = tc.payload_t;
+    const N_c = tc.tray_lcm_2to1;
+    const O_c = Math.max(1, Math.min(Math.floor(L_c / H), Math.floor(N_c / F)));
+    const P_c = O_c * H;
+    const Q_c = O_c * F;
+    const payload_bcm_c = Q_c / (1 + B);
+    const W_c = T_exch + J + (J * (O_c - 1));  // total load cycle for this truck
+    // Cycle time on the haul road: speed varies by class
+    const tr_loaded_dec_c = Math.max(0.005, (road.rr_pct + s.grade_pct) / 100);
+    const tr_empty_dec_c  = Math.max(0.005, (road.rr_pct - s.grade_pct) / 100);
+    const v_loaded_formula_c = (273.75 * tc.hp_grade) / (tc.gmw_loaded_kg * tr_loaded_dec_c);
+    const v_empty_formula_c  = (road.rr_pct - s.grade_pct) <= 0 ? tc.v_max_kmh : (273.75 * tc.hp_grade) / (tc.gmw_empty_kg * tr_empty_dec_c);
+    const v_steady_loaded_c = Math.min(tc.v_max_kmh, Math.max(5, v_loaded_formula_c));
+    const v_steady_empty_c  = Math.min(tc.v_max_kmh, Math.max(10, v_empty_formula_c));
+    const accel_loss_loaded_c = Math.min(0.35, 0.5 / Math.max(0.5, s.distance_km));
+    const accel_loss_empty_c  = Math.min(0.30, 0.4 / Math.max(0.5, s.distance_km));
+    const v_avg_loaded_c = v_steady_loaded_c * (1 - accel_loss_loaded_c);
+    const v_avg_empty_c  = v_steady_empty_c  * (1 - accel_loss_empty_c);
+    const t_haul_loaded_c = (s.distance_km / v_avg_loaded_c) * 60;
+    const t_haul_empty_c  = (s.distance_km / v_avg_empty_c)  * 60;
+    const t_load_c = (J + J * (O_c - 1)) / 60;  // minutes
+    const t_cycle_no_queue_c = t_spot + t_load_c + t_haul_loaded_c + t_ramp_loaded + t_dump + t_haul_empty_c + t_ramp_empty + t_intersection;
+    // Throughput per truck of this class (bcm/hr, no queue)
+    const throughput_per_truck_c = payload_bcm_c * (60 / t_cycle_no_queue_c);
+    // Owning/operating cost per truck per shift (planned SMU)
+    const truck_cost_per_unit = tc.rate_per_hr * s.planned_smu;
+    const fuel_per_unit_L = tc.fuel_lph * s.planned_smu;
+    return {
+      class: m.class, count: m.count, truck: tc,
+      O: O_c, payload_bcm: payload_bcm_c, P: P_c, Q: Q_c, W: W_c,
+      v_steady_loaded: v_steady_loaded_c, v_steady_empty: v_steady_empty_c,
+      v_avg_loaded: v_avg_loaded_c, v_avg_empty: v_avg_empty_c,
+      t_load: t_load_c, t_haul_loaded: t_haul_loaded_c, t_haul_empty: t_haul_empty_c,
+      t_cycle_no_queue: t_cycle_no_queue_c,
+      throughput_per_truck: throughput_per_truck_c,
+      total_throughput: throughput_per_truck_c * m.count,
+      cost_per_unit: truck_cost_per_unit,
+      fuel_per_unit_L: fuel_per_unit_L,
+      total_cost: truck_cost_per_unit * m.count,
+      total_fuel_L: fuel_per_unit_L * m.count,
+    };
+  }).filter(x => x);
 
-  // BINDING CONSTRAINT: min of dig-bound (DD) and truck-bound (truck_bcm_hr_no_queue)
-  const constrained_bcm_hr = Math.min(DD, truck_bcm_hr_no_queue);
+  // Total trucks in mix (recompute defensively from per-class metrics)
+  const total_trucks_in_mix = class_metrics.reduce((sum, c) => sum + c.count, 0);
+  // Weighted-average payload for headline display
+  const total_payload_bcm_per_round = class_metrics.reduce((sum, c) => sum + c.payload_bcm * c.count, 0);
+  const avg_payload_bcm = total_trucks_in_mix > 0 ? total_payload_bcm_per_round / total_trucks_in_mix : payload_bcm;
+  // Weighted-average cycle time for headline (drives match factor display)
+  const weighted_t_cycle_no_queue = class_metrics.reduce((sum, c) => sum + c.t_cycle_no_queue * c.count, 0) / Math.max(1, total_trucks_in_mix);
+  // Dig-unit-side DD for the mix: it serves trucks of different sizes; effective passes is weighted avg
+  const weighted_O = class_metrics.reduce((sum, c) => sum + c.O * c.count, 0) / Math.max(1, total_trucks_in_mix);
+  // Recompute W (loading cycle) and Z for the weighted mix scenario, then DD
+  const W_mix = T_exch + J + J * (weighted_O - 1);
+  const X_mix = 3600 / W_mix;
+  const Y_mix = X_mix * (weighted_O * H);
+  const Z_mix = Y_mix / A;
+  const BB_mix = Z_mix * AA / 60;
+  const DD_mix = BB_mix / (1 + s.rehandle);
 
-  // ACTUAL cycle time accounting for queue when over-trucked:
-  // If MF > 1, trucks queue at face. Effective trips/hr drops so total throughput stays at DD.
-  // truck_count × payload × (60/t_cycle_actual) = DD  →  t_cycle_actual = 60 × truck_count × payload / DD
+  // Total truck-side throughput (sum across classes) at no-queue cycle
+  const truck_bcm_hr_no_queue = class_metrics.reduce((sum, c) => sum + c.total_throughput, 0);
+
+  // Trucks needed for balance against the MIX-aware DD
+  // Use the weighted average per-truck throughput; trucks_needed = DD / per_truck_throughput_avg
+  const per_truck_throughput_avg = total_trucks_in_mix > 0 ? truck_bcm_hr_no_queue / total_trucks_in_mix : 0;
+  const trucks_needed_balanced = per_truck_throughput_avg > 0 ? DD_mix / per_truck_throughput_avg : 0;
+  const match_factor = trucks_needed_balanced > 0 ? total_trucks_in_mix / trucks_needed_balanced : 0;
+
+  // BINDING CONSTRAINT: min of dig-bound (DD_mix) and truck-bound (sum throughput)
+  const constrained_bcm_hr = Math.min(DD_mix, truck_bcm_hr_no_queue);
+
+  // ACTUAL cycle time accounting for queue when over-trucked
+  // For mixed fleet, queue affects all classes proportionally — use weighted-avg cycle scaled by MF
   let t_cycle, t_queue;
   if (match_factor > 1) {
-    t_cycle = (60 * s.truck_count * payload_bcm) / DD;
-    t_queue = t_cycle - t_cycle_no_queue;
+    t_cycle = weighted_t_cycle_no_queue * match_factor;
+    t_queue = t_cycle - weighted_t_cycle_no_queue;
   } else {
-    t_cycle = t_cycle_no_queue;
+    t_cycle = weighted_t_cycle_no_queue;
     t_queue = 0;
   }
-
-  // Truck fleet capacity at actual cycle time
-  const truck_bcm_hr = payload_bcm * (60 / t_cycle) * s.truck_count;
+  // Truck fleet capacity at actual cycle (capped at DD when over-trucked)
+  const truck_bcm_hr = Math.min(truck_bcm_hr_no_queue, DD_mix);
 
   // EFFECTIVE PRODUCTION = constrained × derates (before dozer check)
   const effective_pre_dozer = constrained_bcm_hr * exc_op * trk_op * width.factor;
@@ -1602,8 +1696,9 @@ function calc() {
 
   // ===== COSTS (v1.3 full picture) =====
   // 1. Primary fleet working rates (charged at SMU rates)
+  // v1.8 — sum per-class truck costs from class_metrics
   const exc_cost = exc.rate_per_hr * planned_smu;
-  const truck_cost = s.truck_count * truck.rate_per_hr * planned_smu;
+  const truck_cost = class_metrics.reduce((sum, c) => sum + c.total_cost, 0);
   const cost_primary = exc_cost + truck_cost;
 
   // 2. Ancillary fleet — billed at hourly rate × shift_total_hours × utilisation
@@ -1632,12 +1727,13 @@ function calc() {
   // 4. Fuel — L/hr × hours active × $/L
   // Excavator and trucks burn during SMU. Ancillaries burn during shift_total_hours × utilisation.
   const fuel_exc_L   = exc.fuel_lph * planned_smu;
-  const fuel_trucks_L = truck.fuel_lph * planned_smu * s.truck_count;
+  // v1.8 — sum per-class truck fuel from class_metrics
+  const fuel_trucks_L = class_metrics.reduce((sum, c) => sum + c.total_fuel_L, 0);
   let fuel_anc_L = 0;
   ancillary_breakdown.forEach(a => { fuel_anc_L += a.def.fuel_lph * a.hours_used; });
   const total_fuel_L = fuel_exc_L + fuel_trucks_L + fuel_anc_L;
   // Total fuel burn rate per hour (across all active equipment) — for the headline metric
-  const total_fuel_lph = exc.fuel_lph + (truck.fuel_lph * s.truck_count) +
+  const total_fuel_lph = exc.fuel_lph + class_metrics.reduce((sum, c) => sum + c.truck.fuel_lph * c.count, 0) +
     ancillary_breakdown.reduce((sum, a) => sum + (a.def.fuel_lph * a.cfg.utilisation), 0);
   // v1.4.1: fuel only contributes to project cost when charged_to_project flag is set
   const cost_fuel_raw = total_fuel_L * s.diesel_price;       // always computed for moat / reference
@@ -1696,6 +1792,10 @@ function calc() {
     dozer_constrained, dozer_spread_rate, dozer_loss, effective_pre_dozer,
     total_cost_visible, total_cost_full,
     cost_per_bcm, cost_per_bcm_visible, cost_per_bcm_primary, cost_per_bcm_full,
+    // v1.8 — Mixed fleet metrics
+    class_metrics, using_mix, total_trucks_in_mix, avg_payload_bcm,
+    weighted_O, weighted_t_cycle_no_queue, W_mix, Z_mix, BB_mix, DD_mix,
+    truck_mix: s.truck_mix,
     // Pareto / loss attribution
     losses: { z_to_bb_loss, bb_to_dd_loss, truck_constrain_loss, exc_op_loss, trk_op_loss, face_loss }
   };
@@ -2398,50 +2498,124 @@ function renderAvailabilityList() {
   });
 }
 
+// v1.8.1 — Match viability: passes inside [3,7] is acceptable; outside is filtered.
+// 3 passes = excavator may be over-spec for truck (wasteful). 7 passes = excavator under-spec (slow).
+// Below 3 or above 7 = excluded from results. Borderline cases (3 or 7) shown with a flag.
+const PASS_VIABILITY = { ideal_min: 4, ideal_max: 5, ok_min: 3, ok_max: 7 };
+
+function passViabilityFlag(passes) {
+  if (passes < PASS_VIABILITY.ok_min || passes > PASS_VIABILITY.ok_max) return 'reject';
+  if (passes < PASS_VIABILITY.ideal_min) return 'over';   // excavator too big for truck
+  if (passes > PASS_VIABILITY.ideal_max) return 'under';  // excavator too small for truck
+  return 'ideal';
+}
+
+// v1.8.1 — Enumerate viable mixes across available truck classes.
+// Limits total trucks to maxTotal to keep search space tractable. Filters infeasible/empty.
+function enumerateTruckMixes(availableClassIds, maxTotal) {
+  const mixes = [];
+  function recurse(idx, current, totalSoFar) {
+    if (idx === availableClassIds.length) {
+      if (totalSoFar >= 1) mixes.push(current.filter(c => c.count > 0));
+      return;
+    }
+    const id = availableClassIds[idx];
+    const cap = Math.min(7, maxTotal - totalSoFar);  // cap per-class to 7 (typical fleet allocation)
+    for (let n = 0; n <= cap; n++) {
+      current.push({ class: id, count: n });
+      recurse(idx + 1, current, totalSoFar + n);
+      current.pop();
+    }
+  }
+  recurse(0, [], 0);
+  // Deduplicate by signature (sorted class+count string)
+  const seen = new Set();
+  return mixes.filter(m => {
+    const sig = m.map(x => `${x.class}:${x.count}`).sort().join(',');
+    if (seen.has(sig)) return false;
+    seen.add(sig);
+    return true;
+  });
+}
+
 function findOptimalConfig() {
   const results = [];
   const origExc = STATE.excavator;
   const origTrk = STATE.truck_class;
   const origCount = STATE.truck_count;
+  const origMix = JSON.parse(JSON.stringify(STATE.truck_mix || []));
   const origOpCounts = { ...STATE.operator_counts };
+
+  // Determine available truck class ids (toggled on AND count > 0)
+  const availTruckIds = Object.entries(STATE.equipment_availability?.truck_classes || {})
+    .filter(([id, cfg]) => cfg.available && cfg.count > 0)
+    .map(([id]) => id);
+
+  // Cap maxTotal at sum of available units (you can't run more than you have)
+  const maxAvailable = availTruckIds.reduce((sum, id) =>
+    sum + (STATE.equipment_availability.truck_classes[id].count || 0), 0);
+  const maxTotal = Math.min(10, maxAvailable);
+
+  // Enumerate mixes once (independent of excavator choice)
+  const allMixes = enumerateTruckMixes(availTruckIds, maxTotal);
+
   Object.entries(EXCAVATORS).forEach(([excId, exc]) => {
     if (!STATE.equipment_availability?.excavators?.[excId]) return;
-    Object.entries(TRUCK_CLASSES).forEach(([truckId, truck]) => {
-      const avail = STATE.equipment_availability?.truck_classes?.[truckId];
-      if (!avail || !avail.available || avail.count < 1) return;
-      for (let n = 1; n <= avail.count; n++) {
-        STATE.excavator = excId;
-        STATE.truck_class = truckId;
-        STATE.truck_count = n;
-        // v1.5.1 FIX: scale truck operators with trial truck count so labour is fairly costed
-        const truckDelta = n - origCount;
-        STATE.operator_counts = { ...origOpCounts, lvl2_multi: Math.max(0, origOpCounts.lvl2_multi + truckDelta) };
-        const r = calc();
-        results.push({
-          excId, truckId, n,
-          exc_name: exc.name, truck_name: truck.name,
-          cost_per_bcm: r.cost_per_bcm_visible,
-          production_bcm: r.production_bcm,
-          bcm_per_smu: r.bcm_per_smu,
-          bcm_per_truck_per_hr: r.effective_bcm_hr / Math.max(1, n),
-          loads_per_truck_per_hr: (r.effective_bcm_hr / Math.max(1, n)) / Math.max(0.1, r.payload_bcm),
-          total_cost: r.total_cost_visible,
-          bottleneck: r.bottleneck,
-          match_factor: r.match_factor,
-          passes: r.O,
-          payload_bcm: r.payload_bcm,
-          loads_per_truck: r.loads_per_truck,
-          dozer_constrained: r.dozer_constrained
-        });
-      }
+
+    allMixes.forEach(mix => {
+      if (mix.length === 0) return;
+      // Honour per-class max availability (mix could exceed availability)
+      const exceeded = mix.some(m => m.count > (STATE.equipment_availability.truck_classes[m.class]?.count || 0));
+      if (exceeded) return;
+
+      STATE.excavator = excId;
+      STATE.truck_mix = mix;
+      const totalTrucks = mix.reduce((s, m) => s + m.count, 0);
+      STATE.truck_count = totalTrucks;
+      STATE.truck_class = mix.sort((a,b) => b.count - a.count)[0].class;
+      const truckDelta = totalTrucks - origCount;
+      STATE.operator_counts = { ...origOpCounts, lvl2_multi: Math.max(0, origOpCounts.lvl2_multi + truckDelta) };
+
+      const r = calc();
+
+      // Per-class pass viability check — reject if any class has unviable passes for this excavator
+      const classViability = (r.class_metrics || []).map(c => ({
+        class: c.class, count: c.count, passes: c.O, flag: passViabilityFlag(c.O)
+      }));
+      const anyReject = classViability.some(c => c.flag === 'reject');
+      if (anyReject) return;
+      const worstFlag = classViability.find(c => c.flag !== 'ideal')?.flag || 'ideal';
+
+      // Display string: "2×789 + 1×777"
+      const mixStr = mix.filter(m => m.count > 0).map(m => `${m.count}×${m.class}`).join(' + ');
+
+      results.push({
+        excId, mix, mixStr, n: totalTrucks,
+        exc_name: exc.name,
+        cost_per_bcm: r.cost_per_bcm_visible,
+        production_bcm: r.production_bcm,
+        bcm_per_smu: r.bcm_per_smu,
+        bcm_per_truck_per_hr: r.effective_bcm_hr / Math.max(1, totalTrucks),
+        total_cost: r.total_cost_visible,
+        bottleneck: r.bottleneck,
+        match_factor: r.match_factor,
+        passes_summary: classViability.map(c => `${c.count}×${c.class}@${c.passes}p`).join(' / '),
+        worstFlag,
+        avg_payload_bcm: r.avg_payload_bcm || r.payload_bcm,
+        dozer_constrained: !!r.dozer_constrained,
+        weighted_O: r.weighted_O || r.O,
+      });
     });
   });
-  // restore everything
+
+  // Restore everything
   STATE.excavator = origExc;
   STATE.truck_class = origTrk;
   STATE.truck_count = origCount;
+  STATE.truck_mix = origMix;
   STATE.operator_counts = origOpCounts;
-  // sort by cost/bcm ascending, exclude infeasible (no production)
+
+  // Sort by cost/bcm ascending, exclude infeasible
   return results.filter(x => isFinite(x.cost_per_bcm) && x.cost_per_bcm > 0 && x.production_bcm > 0)
                 .sort((a, b) => a.cost_per_bcm - b.cost_per_bcm);
 }
@@ -2470,17 +2644,25 @@ function openOptimiseModal() {
           <th style="text-align:right;color:var(--text2);padding:6px 4px;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:10px;">$ / bcm</th>
           <th style="text-align:right;color:var(--text2);padding:6px 4px;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:10px;">Production</th>
           <th style="text-align:left;color:var(--text2);padding:6px 4px;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:10px;">Bottleneck</th>
+          <th style="text-align:center;color:var(--text2);padding:6px 4px;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:10px;" title="Match quality: ★ ideal 4-5 passes; ⚠ borderline 3 or 6-7 passes">Match</th>
           <th></th>
         </tr></thead>
         <tbody>
-          ${top.map((r, i) => `<tr style="border-bottom:1px solid var(--border);">
+          ${top.map((r, i) => {
+            const matchIcon = r.worstFlag === 'ideal' ? '<span style="color:var(--green);">★</span>'
+                            : r.worstFlag === 'over' ? '<span style="color:var(--ochre);" title="Excavator over-spec — 3 passes, truck under-loaded relative to bucket">⚠ over</span>'
+                            : r.worstFlag === 'under' ? '<span style="color:var(--ochre);" title="Excavator under-spec — 6-7 passes, slow loading">⚠ under</span>'
+                            : '—';
+            const dozerFlag = r.dozer_constrained ? '<span style="color:#d8534a;font-size:10px;">dozer-bound</span>' : '';
+            return `<tr style="border-bottom:1px solid var(--border);">
             <td style="padding:8px 4px;font-family:'DM Mono',monospace;color:${i === 0 ? 'var(--copperLight)' : 'var(--text1)'};font-weight:${i === 0 ? '600' : 'normal'};">${i + 1}${i === 0 ? ' ★' : ''}</td>
-            <td style="padding:8px 4px;font-family:'Barlow',sans-serif;color:var(--text0);">${r.excId} <span style="color:var(--text2);">+</span> ${r.n} × ${r.truckId}<br><span style="color:var(--text2);font-size:11px;">${r.passes} passes · ${r.payload_bcm.toFixed(1)} bcm/truck · <strong>${r.loads_per_truck_per_hr.toFixed(1)} loads/hr/truck</strong> · ${r.loads_per_truck.toFixed(0)} loads/truck/shift</span></td>
+            <td style="padding:8px 4px;font-family:'Barlow',sans-serif;color:var(--text0);">${r.excId} <span style="color:var(--text2);">+</span> <strong>${r.mixStr}</strong><br><span style="color:var(--text2);font-size:11px;">${r.passes_summary} · avg ${r.avg_payload_bcm.toFixed(1)} bcm/truck ${dozerFlag}</span></td>
             <td style="padding:8px 4px;text-align:right;font-family:'DM Mono',monospace;color:var(--copperLight);font-weight:${i === 0 ? '600' : 'normal'};">${fmtMoney(r.cost_per_bcm, 2)}</td>
             <td style="padding:8px 4px;text-align:right;font-family:'DM Mono',monospace;color:var(--text0);">${fmt(r.production_bcm, 0)} bcm<br><span style="color:var(--text2);font-size:11px;">${fmt(r.bcm_per_smu, 0)} bcm/SMU · ${fmt(r.bcm_per_truck_per_hr, 0)} bcm/hr/truck</span></td>
-            <td style="padding:8px 4px;">${bottleneckLabel(r.bottleneck)}<br><span style="color:var(--text2);font-size:11px;">match ${r.match_factor.toFixed(2)}</span></td>
+            <td style="padding:8px 4px;">${bottleneckLabel(r.bottleneck)}<br><span style="color:var(--text2);font-size:11px;">MF ${r.match_factor.toFixed(2)}</span></td>
+            <td style="padding:8px 4px;text-align:center;font-size:11px;">${matchIcon}</td>
             <td style="padding:8px 4px;text-align:right;"><button class="primary" data-apply-opt="${i}">Apply</button></td>
-          </tr>`).join('')}
+          </tr>`}).join('')}
         </tbody>
       </table>
       <div class="help-block" style="margin-top:10px;">${results.length} feasible configurations evaluated · ranked by $/bcm. The ★ option is the optimal. "Apply" sets the Plan tab to that fleet so you can keep tuning from there.</div>
@@ -2490,15 +2672,19 @@ function openOptimiseModal() {
         const idx = parseInt(b.dataset.applyOpt);
         const r = top[idx];
         STATE.excavator = r.excId;
-        STATE.truck_class = r.truckId;
-        STATE.truck_count = r.n;
+        // v1.8.1 — apply full mix
+        STATE.truck_mix = JSON.parse(JSON.stringify(r.mix));
+        const total = r.mix.reduce((s, m) => s + m.count, 0);
+        const dominant = [...r.mix].sort((a,b) => b.count - a.count)[0];
+        STATE.truck_class = dominant.class;
+        STATE.truck_count = total;
         // Re-populate the select widgets to reflect new state
         document.getElementById('in-excavator').value = r.excId;
-        document.getElementById('in-truck-class').value = r.truckId;
-        document.getElementById('in-truck-count').value = r.n;
+        const sel = document.getElementById('in-truck-class'); if (sel) sel.value = dominant.class;
+        const inp = document.getElementById('in-truck-count'); if (inp) inp.value = total;
         m.classList.remove('show');
         render();
-        toast(`Applied: ${r.excId} + ${r.n}×${r.truckId} · ${fmtMoney(r.cost_per_bcm, 2)}/bcm`);
+        toast(`Applied: ${r.excId} + ${r.mixStr} · ${fmtMoney(r.cost_per_bcm, 2)}/bcm`);
       });
     });
   }
@@ -2538,8 +2724,87 @@ function loadPersistedState() {
   } catch (e) { /* corrupted state, ignore */ }
 }
 
+
+// v1.8 — Mixed fleet UI renderer
+function renderTruckMix() {
+  if (!Array.isArray(STATE.truck_mix)) {
+    // initialize from legacy field
+    STATE.truck_mix = [
+      { class: "793", count: 0 },
+      { class: "789", count: 0 },
+      { class: "785", count: STATE.truck_count || 4 },
+      { class: "777", count: 0 },
+      { class: "773", count: 0 },
+    ];
+  }
+  // Ensure all canonical classes exist as rows (preserves order — biggest to smallest)
+  const canonical = ["793", "789", "785", "777", "773"];
+  canonical.forEach(c => {
+    if (!STATE.truck_mix.find(m => m.class === c)) STATE.truck_mix.push({ class: c, count: 0 });
+  });
+  const container = document.getElementById('truck-mix-rows');
+  if (!container) return;
+  container.innerHTML = STATE.truck_mix.map((m, i) => {
+    const tc = TRUCK_CLASSES[m.class];
+    if (!tc) return '';
+    const isActive = m.count > 0;
+    return `<div class="truck-mix-row" style="display:grid;grid-template-columns:1fr 130px;gap:8px;align-items:center;padding:6px 8px;background:${isActive ? 'var(--bg2)' : 'var(--bg1)'};border:1px solid ${isActive ? 'var(--copperDim)' : 'var(--border)'};border-radius:3px;">
+      <div>
+        <div style="font-weight:600;color:${isActive ? 'var(--text0)' : 'var(--text2)'};font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.06em;font-size:13px;">${m.class} <span style="color:var(--text2);font-weight:normal;font-size:11px;">· ${tc.class_label} · ${tc.payload_t} t</span></div>
+        <div style="color:var(--text2);font-size:10.5px;margin-top:2px;">${tc.notes || ''}</div>
+      </div>
+      <div class="number-stepper" style="width:130px;">
+        <button data-mix-adjust="${i}" data-delta="-1" type="button">−</button>
+        <input type="number" min="0" max="20" value="${m.count}" data-mix-count="${i}"/>
+        <button data-mix-adjust="${i}" data-delta="1" type="button">+</button>
+      </div>
+    </div>`;
+  }).join('');
+  // Wire listeners
+  container.querySelectorAll('button[data-mix-adjust]').forEach(b => {
+    b.addEventListener('click', () => {
+      const i = parseInt(b.dataset.mixAdjust);
+      const delta = parseInt(b.dataset.delta);
+      STATE.truck_mix[i].count = Math.max(0, Math.min(20, (STATE.truck_mix[i].count || 0) + delta));
+      renderTruckMix();
+      render();
+    });
+  });
+  container.querySelectorAll('input[data-mix-count]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const i = parseInt(inp.dataset.mixCount);
+      STATE.truck_mix[i].count = Math.max(0, parseInt(inp.value) || 0);
+      renderTruckMix();
+      render();
+    });
+  });
+  // Summary
+  const active = STATE.truck_mix.filter(m => m.count > 0);
+  const total = active.reduce((s, m) => s + m.count, 0);
+  const summary = document.getElementById('truck-mix-summary');
+  if (summary) {
+    if (total === 0) {
+      summary.innerHTML = '<span style="color:var(--ochre);">⚠ No trucks selected — set at least one count above zero.</span>';
+    } else {
+      const summaryStr = active.map(m => `${m.count}× ${m.class}`).join(' + ');
+      summary.innerHTML = `<strong>${total}</strong> truck${total === 1 ? '' : 's'} · ${summaryStr}`;
+    }
+  }
+  // Sync legacy hidden fields for back-compat
+  const dominant = active.sort((a,b) => b.count - a.count)[0];
+  if (dominant) {
+    STATE.truck_class = dominant.class;
+    STATE.truck_count = total;
+    const sel = document.getElementById('in-truck-class');
+    const inp = document.getElementById('in-truck-count');
+    if (sel) sel.value = dominant.class;
+    if (inp) inp.value = total;
+  }
+}
+
 function render() {
   persistState();   // save on every render — invisible to user
+  renderTruckMix();  // v1.8 — keep mix UI in sync
   const r = calc();
   const ro = document.getElementById('readout');
 
