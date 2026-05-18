@@ -1302,10 +1302,10 @@ const OPERATOR_RATES_DEFAULT = {
 const MATERIAL_TYPES = {
   // v1.8.2 — heap = effective tray volume as multiple of SAE 2:1.
   // Light/loose material heaps higher; dense rock doesn't heap.
-  topsoil:        { name: "Topsoil",              density: 1.50,  swell: 0.25, heap: 1.12 },
-  ob_weathered:   { name: "OB — Weathered",       density: 1.95,  swell: 0.30, heap: 1.10 },
+  topsoil:        { name: "Topsoil",              density: 1.50,  swell: 0.25, heap: 1.00 },
+  ob_weathered:   { name: "OB — Weathered",       density: 1.95,  swell: 0.30, heap: 1.00 },
   ob_light:       { name: "OB — Lower density",   density: 2.022, swell: 0.35, heap: 1.08 },
-  ob_mean:        { name: "OB — Mean density",    density: 2.295, swell: 0.35, heap: 1.07 },
+  ob_mean:        { name: "OB — Mean density",    density: 2.295, swell: 0.35, heap: 1.00 },
   ob_heavy:       { name: "OB — Upper density",   density: 2.565, swell: 0.35, heap: 1.05 },
   ob_fresh:       { name: "OB — Fresh / unweathered", density: 2.50, swell: 0.40, heap: 1.05 },
   rock_blasted:   { name: "Rock — blasted hard",  density: 2.65,  swell: 0.40, heap: 1.03 },
@@ -1601,7 +1601,11 @@ function calc() {
   const partial_pass = Math.max(0, Math.min(0.8, partial_max_w, partial_max_v));
   // Only add the partial pass if integer fill is below 95% target (otherwise not worth the time)
   const target_payload_t = L * 0.95;
-  const partial_useful = (O_int * H) < target_payload_t;
+  // v2.3.2 — Only add partial pass if BOTH weight AND volume have meaningful headroom
+  const partial_useful_w = (O_int * H) < target_payload_t;
+  const tray_fill_after_int = (O_int * F) / N_eff_main;
+  const partial_useful_v = tray_fill_after_int < 0.88;  // v2.3.3 — tighter: < 88% full = room for top-off
+  const partial_useful = partial_useful_w && partial_useful_v;
   const O = partial_useful ? (O_int + partial_pass) : O_int;
   const truck_fill_pct = (O * H) / L;                       // payload as % of nameplate
 
@@ -1739,7 +1743,10 @@ function calc() {
     const rem_v_c = N_eff_c - (O_int_c * F);
     const partial_c = Math.max(0, Math.min(0.8, rem_w_c / H, rem_v_c / F));
     const target_payload_c = L_c * 0.95;
-    const partial_useful_c = (O_int_c * H) < target_payload_c;
+    const partial_useful_c_w = (O_int_c * H) < target_payload_c;
+    const tray_fill_after_int_c = (O_int_c * F) / N_eff_c;
+    const partial_useful_c_v = tray_fill_after_int_c < 0.88;  // v2.3.3
+    const partial_useful_c = partial_useful_c_w && partial_useful_c_v;
     const O_c = partial_useful_c ? (O_int_c + partial_c) : O_int_c;
     const fill_pct_c = (O_c * H) / L_c;  // truck fill as % of nameplate
     const P_c = O_c * H;
