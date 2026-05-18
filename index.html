@@ -821,11 +821,11 @@
           <span class="card-subtitle">side-by-side scenario compare</span>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:center;">
-          <div>
+          <div style="min-width:260px;">
             <label style="display:block;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:11px;color:var(--text2);margin-bottom:4px;">Total volume to move</label>
             <div style="display:flex;gap:6px;align-items:center;">
-              <input type="number" id="delta-total-vol" min="0" step="100" value="10000" style="flex:1;padding:8px;background:var(--bg1);border:1px solid var(--border);color:var(--text0);font-family:'DM Mono',monospace;border-radius:3px;"/>
-              <select id="delta-units" style="padding:8px;background:var(--bg1);border:1px solid var(--border);color:var(--text0);font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:11px;border-radius:3px;">
+              <input type="number" id="delta-total-vol" min="0" step="100" value="10000" style="flex:1 1 0;min-width:140px;padding:10px 12px;background:var(--bg1);border:1px solid var(--border);color:var(--text0);font-family:'DM Mono',monospace;font-size:14px;border-radius:3px;"/>
+              <select id="delta-units" style="flex:0 0 80px;padding:10px;background:var(--bg1);border:1px solid var(--border);color:var(--text0);font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:11px;border-radius:3px;">
                 <option value="bcm" selected>BCM</option>
                 <option value="lcm">LCM</option>
               </select>
@@ -3059,7 +3059,8 @@ function calcWithOverrides(overrides) {
 function applyDeltaCostLayers(r) {
   const L = STATE.cost_layers || { fuel: true, contractor: false, owners: false };
   const direct = (r.cost_primary || 0) + (r.cost_ancillaries || 0) + (r.cost_labour || 0);
-  const fuel = L.fuel ? (r.cost_fuel || 0) : 0;
+  // v2.0.2 — use cost_fuel_raw so the Delta fuel toggle works independent of fuel_charged_to_project flag
+  const fuel = L.fuel ? ((r.cost_fuel_raw != null) ? r.cost_fuel_raw : (r.cost_fuel || 0)) : 0;
   const contractor = L.contractor ? direct * 0.20 : 0;  // 20% of direct (excl fuel)
   const owners = L.owners ? direct * 0.08 : 0;          // 8% of direct (excl fuel)
   const total = direct + fuel + contractor + owners;
@@ -3112,6 +3113,11 @@ function renderDeltaInputs() {
   const excLabel = (id) => (EXCAVATORS[id]?.name || id);
   const mixStr = (mix) => (mix || []).filter(m => m.count > 0).map(m => `${m.count}×${m.class}`).join(' + ') || '—';
 
+  // v2.0.2 — derive labels safely
+  const titleCaseA = (s) => String(s).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  const roadLabelSafe = (id) => { const r = ROAD_CONDITIONS[id]; return r ? `${r.label || titleCaseA(id)} (rr ${r.rr_pct}%)` : titleCaseA(id); };
+  const dumpLabelSafe = (id) => { const d = DUMP_TYPES[id]; return d ? (d.name || d.label || titleCaseA(id)) : titleCaseA(id); };
+  const widthLabelSafe = (id) => { if (typeof FACE_WIDTH !== 'object' || !FACE_WIDTH[id]) return titleCaseA(id); const w = FACE_WIDTH[id]; return w.label || w.name || titleCaseA(id); };
   const aColumn = `
     <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--copperDim);padding:12px 14px;border-radius:0 3px 3px 0;">
       <div style="font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-weight:600;font-size:12px;color:var(--copperDim);margin-bottom:10px;">Plan A · planned (from Plan tab)</div>
@@ -3120,17 +3126,24 @@ function renderDeltaInputs() {
       ${deltaRowDisplay('Truck mix', mixStr(a.truck_mix))}
       ${deltaRowDisplay('Distance', a.distance_km + ' km')}
       ${deltaRowDisplay('Grade', a.grade_pct + ' %')}
-      ${deltaRowDisplay('Road', roadLabel(a.road))}
-      ${deltaRowDisplay('Dump type', dumpLabel(a.dump))}
+      ${deltaRowDisplay('Ramps', (a.ramps != null ? a.ramps : '—') + ' count')}
+      ${deltaRowDisplay('Intersections', (a.intersections != null ? a.intersections : '—') + ' count')}
+      ${deltaRowDisplay('Road', roadLabelSafe(a.road))}
+      ${deltaRowDisplay('Dump type', dumpLabelSafe(a.dump))}
+      ${typeof FACE_WIDTH === 'object' && a.dump_width ? deltaRowDisplay('Dump face', widthLabelSafe(a.dump_width)) : ''}
       ${deltaRowDisplay('Dig condition', digLabel(a.dig_condition))}
     </div>
   `;
 
-  // Plan B: scope-only editor (fleet decided by optimiser)
+  // v2.0.2 — Fix dropdown labels (ROAD_CONDITIONS uses .label NOT present; DUMP_TYPES uses .name)
+  // Title-case helper for IDs without explicit labels
+  const titleCase = (s) => String(s).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   const bMaterialOpts = Object.entries(MATERIAL_TYPES).map(([id, m]) => `<option value="${id}" ${b.material === id ? 'selected' : ''}>${m.name}</option>`).join('');
-  const bRoadOpts = Object.entries(ROAD_CONDITIONS).map(([id, r]) => `<option value="${id}" ${b.road === id ? 'selected' : ''}>${r.label}</option>`).join('');
-  const bDumpOpts = Object.entries(DUMP_TYPES).map(([id, d]) => `<option value="${id}" ${b.dump === id ? 'selected' : ''}>${d.label}</option>`).join('');
+  const bRoadOpts = Object.entries(ROAD_CONDITIONS).map(([id, r]) => `<option value="${id}" ${b.road === id ? 'selected' : ''}>${r.label || titleCase(id)} (rr ${r.rr_pct}%)</option>`).join('');
+  const bDumpOpts = Object.entries(DUMP_TYPES).map(([id, d]) => `<option value="${id}" ${b.dump === id ? 'selected' : ''}>${d.name || d.label || titleCase(id)}</option>`).join('');
   const bDigOpts = Object.entries(DIG_CONDITIONS).map(([id, d]) => `<option value="${id}" ${b.dig_condition === id ? 'selected' : ''}>${d.name}</option>`).join('');
+  // Face width opts — FACE_WIDTH ids are 'narrow' / 'standard' / 'wide' typically
+  const bWidthOpts = (typeof FACE_WIDTH === 'object' ? Object.entries(FACE_WIDTH) : []).map(([id, w]) => `<option value="${id}" ${b.dump_width === id ? 'selected' : ''}>${w.label || w.name || titleCase(id)}</option>`).join('');
 
   const bColumn = `
     <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--copperLight);padding:12px 14px;border-radius:0 3px 3px 0;">
@@ -3138,10 +3151,15 @@ function renderDeltaInputs() {
       ${deltaRowEdit('Material', `<select data-deltab="material">${bMaterialOpts}</select>`)}
       ${deltaRowEdit('Distance', `<input type="number" min="0" step="0.1" value="${b.distance_km}" data-deltab="distance_km"/> km`)}
       ${deltaRowEdit('Grade', `<input type="number" step="0.1" value="${b.grade_pct}" data-deltab="grade_pct"/> %`)}
+      ${deltaRowEdit('Ramps', `<input type="number" min="0" step="1" value="${b.ramps}" data-deltab="ramps"/> count`)}
+      ${deltaRowEdit('Intersections', `<input type="number" min="0" step="1" value="${b.intersections}" data-deltab="intersections"/> count`)}
       ${deltaRowEdit('Road', `<select data-deltab="road">${bRoadOpts}</select>`)}
       ${deltaRowEdit('Dump type', `<select data-deltab="dump">${bDumpOpts}</select>`)}
+      ${bWidthOpts ? deltaRowEdit('Dump face', `<select data-deltab="dump_width">${bWidthOpts}</select>`) : ''}
       ${deltaRowEdit('Dig condition', `<select data-deltab="dig_condition">${bDigOpts}</select>`)}
-      <div style="margin-top:8px;font-family:'Barlow';font-size:11px;color:var(--text2);font-style:italic;">Fleet (excavator + truck mix) is decided by the optimiser using current Fleet Config availability toggles.</div>
+      <div style="margin-top:8px;padding:6px 8px;background:var(--bg1);border-left:2px solid var(--green);font-family:'Barlow';font-size:11px;color:var(--text1);">
+        Fleet (excavator + truck mix) decided by the optimiser. Result shown in <strong>Results · Fleet</strong> row below.
+      </div>
     </div>
   `;
 
@@ -3151,6 +3169,19 @@ function renderDeltaInputs() {
     el.addEventListener('change', () => {
       let val = el.value;
       if (['distance_km', 'grade_pct'].includes(key)) val = parseFloat(val) || 0;
+      else if (['ramps', 'intersections'].includes(key)) val = parseInt(val) || 0;
+      STATE.planB_overrides[key] = val;
+      persistState();
+      renderDelta();
+    });
+  });
+  // Also listen for input on number fields so live numbers don't require blur
+  grid.querySelectorAll('input[type="number"][data-deltab]').forEach(el => {
+    const key = el.dataset.deltab;
+    el.addEventListener('input', () => {
+      let val = el.value;
+      if (['distance_km', 'grade_pct'].includes(key)) val = parseFloat(val) || 0;
+      else if (['ramps', 'intersections'].includes(key)) val = parseInt(val) || 0;
       STATE.planB_overrides[key] = val;
       persistState();
       renderDelta();
@@ -3257,41 +3288,58 @@ function renderDeltaStackedBar() {
   const cA  = applyDeltaCostLayers(rA);
   const cAo = applyDeltaCostLayers(rAo);
   const cBo = applyDeltaCostLayers(rBo);
-  const maxTotal = Math.max(cA.total, cAo.total, cBo.total, 1);
 
-  const stack = (c, label, color) => {
-    const segments = [
-      { name: 'Direct', val: c.direct, col: 'var(--copperDim)' },
-      { name: 'Fuel', val: c.fuel, col: '#c2a06a' },
-      { name: 'Contractor', val: c.contractor, col: '#7a8b6a' },
-      { name: 'Owners', val: c.owners, col: '#6a7a8b' },
-    ].filter(s => s.val > 0);
-    const totalW = (c.total / maxTotal) * 100;
-    let cursor = 0;
-    const bars = segments.map(s => {
-      const w = (s.val / c.total) * totalW;
-      const left = cursor;
-      cursor += w;
-      return `<rect x="${left}%" y="0" width="${w}%" height="34" fill="${s.col}" stroke="var(--bg0)" stroke-width="1"/>
-        ${w > 8 ? `<text x="${left + w/2}%" y="22" text-anchor="middle" font-family="Barlow Condensed" font-size="11" font-weight="600" fill="white">${fmtMoney(s.val, 0)}</text>` : ''}`;
+  const columns = [
+    { label: 'Plan A · planned',   header: 'var(--copperDim)',   c: cA  },
+    { label: 'Plan A · optimised', header: 'var(--copperLight)', c: cAo },
+    { label: 'Plan B · optimised', header: 'var(--green)',       c: cBo },
+  ];
+  const maxTotal = Math.max(...columns.map(x => x.c.total), 1);
+
+  // SVG canvas: 600 wide × 320 tall; bars 80px wide, 30px gap, centred
+  const W = 600, H = 320, PAD_BOT = 40, PAD_TOP = 30;
+  const barW = 100;
+  const gapX = (W - 3 * barW) / 4;
+  const usableH = H - PAD_TOP - PAD_BOT;
+
+  // Segment palette
+  const SEGS = [
+    { key: 'direct',     name: 'Direct',     col: '#c8833a' },
+    { key: 'fuel',       name: 'Fuel',       col: '#c2a06a' },
+    { key: 'contractor', name: 'Contractor', col: '#7a8b6a' },
+    { key: 'owners',     name: 'Owners',     col: '#6a7a8b' },
+  ];
+
+  const colSvg = columns.map((col, idx) => {
+    const x = gapX + idx * (barW + gapX);
+    const totalH = (col.c.total / maxTotal) * usableH;
+    let yCursor = H - PAD_BOT;  // start from bottom
+    const segs = SEGS.map(seg => {
+      const val = col.c[seg.key] || 0;
+      if (val <= 0) return '';
+      const segH = (val / maxTotal) * usableH;
+      yCursor -= segH;
+      const showLabel = segH > 14;
+      return `<rect x="${x}" y="${yCursor}" width="${barW}" height="${segH}" fill="${seg.col}" stroke="var(--bg0)" stroke-width="1"/>
+        ${showLabel ? `<text x="${x + barW/2}" y="${yCursor + segH/2 + 4}" text-anchor="middle" font-family="Barlow Condensed" font-size="11" font-weight="600" fill="white">${fmtMoney(val, 0)}</text>` : ''}`;
     }).join('');
-    return `<div style="margin-bottom:10px;">
-      <div style="display:flex;justify-content:space-between;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:11px;color:${color};margin-bottom:4px;">
-        <span>${label}</span>
-        <span>${fmtMoney(c.total, 0)} per shift</span>
-      </div>
-      <svg width="100%" height="34" style="display:block;">${bars}</svg>
-    </div>`;
-  };
+    // Total label above
+    const totalY = H - PAD_BOT - totalH - 8;
+    const labelY = H - PAD_BOT + 22;
+    return `${segs}
+      <text x="${x + barW/2}" y="${totalY}" text-anchor="middle" font-family="DM Mono" font-size="12" font-weight="600" fill="${col.header}">${fmtMoney(col.c.total, 0)}</text>
+      <text x="${x + barW/2}" y="${labelY}" text-anchor="middle" font-family="Barlow Condensed" font-size="11" font-weight="600" fill="${col.header}" style="text-transform:uppercase;letter-spacing:0.08em;">${col.label}</text>`;
+  }).join('');
 
-  host.innerHTML = stack(cA, 'Plan A · planned', 'var(--copperDim)') +
-                   stack(cAo, 'Plan A · optimised', 'var(--copperLight)') +
-                   stack(cBo, 'Plan B · optimised', 'var(--green)') + `
-    <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:8px;font-family:'Barlow';font-size:11px;color:var(--text2);">
-      <span><span style="display:inline-block;width:10px;height:10px;background:var(--copperDim);margin-right:4px;"></span>Direct (primary + ancillaries + labour)</span>
-      <span><span style="display:inline-block;width:10px;height:10px;background:#c2a06a;margin-right:4px;"></span>Fuel</span>
-      <span><span style="display:inline-block;width:10px;height:10px;background:#7a8b6a;margin-right:4px;"></span>Contractor OH (20% of direct)</span>
-      <span><span style="display:inline-block;width:10px;height:10px;background:#6a7a8b;margin-right:4px;"></span>Owners (8% of direct)</span>
+  const legend = SEGS.map(s => `<span><span style="display:inline-block;width:10px;height:10px;background:${s.col};margin-right:4px;vertical-align:middle;"></span>${s.name}${s.key === 'contractor' ? ' (20% of direct)' : s.key === 'owners' ? ' (8% of direct)' : ''}</span>`).join('');
+
+  host.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="width:100%;max-width:700px;height:auto;display:block;margin:0 auto;">
+      <line x1="0" y1="${H - PAD_BOT}" x2="${W}" y2="${H - PAD_BOT}" stroke="var(--border)" stroke-width="1"/>
+      ${colSvg}
+    </svg>
+    <div style="display:flex;flex-wrap:wrap;gap:14px;justify-content:center;margin-top:10px;font-family:'Barlow';font-size:11px;color:var(--text2);">
+      ${legend}
     </div>`;
 }
 
