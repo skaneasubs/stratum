@@ -118,6 +118,12 @@
   .fleet-cell .fc-label { font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; color: var(--text2); }
   .fleet-cell .fc-value { font-family: 'DM Mono', monospace; font-size: 16px; color: var(--text0); }
   .fleet-cell .fc-detail { font-family: 'Barlow', sans-serif; color: var(--text2); font-size: 10px; }
+  /* v1.9.3 — RAR drill-down */
+  .rar-drill:hover rect:nth-of-type(2) { filter: brightness(1.25) drop-shadow(0 0 3px var(--copperLight)); }
+  .rar-drill:hover { opacity: 1; }
+  svg:has(.rar-drill:hover) .rar-drill:not(:hover) { opacity: 0.4; }
+  .rar-drill.selected rect:nth-of-type(2) { stroke: var(--copperLight); stroke-width: 2; filter: drop-shadow(0 0 4px var(--copperLight)); }
+
   /* HELP REPORT */
   .help-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 900px) { .help-grid { grid-template-columns: 1fr; } }
@@ -1083,10 +1089,13 @@ function renderRarVolumeChart(days) {
     const labelY = h < 18 ? y - 6 : y + 14;
     const labelCol = h < 18 ? 'var(--text0)' : 'white';
     const dotted = d.is_actual ? '' : ' stroke-dasharray="3 2" stroke="rgba(255,255,255,0.4)" stroke-width="1"';
-    return `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(0,h)}" fill="${fillCol}"${dotted}/>
+    return `<g class="rar-drill" data-rar-drill="${d.date}" style="cursor:pointer;">
+      <rect x="${x - 2}" y="${padT}" width="${barW + 4}" height="${chartH}" fill="rgba(255,255,255,0.001)"/>
+      <rect x="${x}" y="${y}" width="${barW}" height="${Math.max(0,h)}" fill="${fillCol}"${dotted}/>
       ${h > 6 ? `<text x="${x + barW/2}" y="${labelY}" text-anchor="middle" font-family="DM Mono" font-size="11" font-weight="600" fill="${labelCol}">${d.display_bcm > 0 ? fmt(d.display_bcm, 0) : '—'}</text>` : ''}
       <text x="${x + barW/2}" y="${padT + chartH + 18}" text-anchor="middle" font-family="Barlow Condensed" font-size="10.5" fill="var(--text1)">${d.dateLabel}</text>
-      <text x="${x + barW/2}" y="${padT + chartH + 34}" text-anchor="middle" font-family="Barlow" font-size="10" fill="var(--text2)">${d.dow}</text>`;
+      <text x="${x + barW/2}" y="${padT + chartH + 34}" text-anchor="middle" font-family="Barlow" font-size="10" fill="var(--text2)">${d.dow}</text>
+    </g>`;
   }).join('');
 
   // Title
@@ -1169,10 +1178,13 @@ function renderRarCostChart(days) {
     const onTrack = d.display_cost <= target;
     const fillCol = onTrack ? '#4a8a52' : '#b04830';
     const dotted = d.is_actual ? '' : ' stroke-dasharray="3 2" stroke="rgba(255,255,255,0.4)" stroke-width="1"';
-    return `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(0,h)}" fill="${fillCol}"${dotted}/>
+    return `<g class="rar-drill" data-rar-drill="${d.date}" style="cursor:pointer;">
+      <rect x="${x - 2}" y="${padT}" width="${barW + 4}" height="${chartH}" fill="rgba(255,255,255,0.001)"/>
+      <rect x="${x}" y="${y}" width="${barW}" height="${Math.max(0,h)}" fill="${fillCol}"${dotted}/>
       <text x="${x + barW/2}" y="${y + 14}" text-anchor="middle" font-family="DM Mono" font-size="11" font-weight="600" fill="white">$${d.display_cost.toFixed(2)}</text>
       <text x="${x + barW/2}" y="${padT + chartH + 18}" text-anchor="middle" font-family="Barlow Condensed" font-size="10.5" fill="var(--text1)">${d.dateLabel}</text>
-      <text x="${x + barW/2}" y="${padT + chartH + 34}" text-anchor="middle" font-family="Barlow" font-size="10" fill="var(--text2)">${d.dow}</text>`;
+      <text x="${x + barW/2}" y="${padT + chartH + 34}" text-anchor="middle" font-family="Barlow" font-size="10" fill="var(--text2)">${d.dow}</text>
+    </g>`;
   }).join('');
 
   const title = `<text x="${padL}" y="24" font-family="Barlow" font-weight="600" font-size="14" fill="var(--text0)">Cost per bcm ($/bcm)</text>
@@ -1397,6 +1409,19 @@ function render() {
       wire('rar-stretch-bcm', el => STATE.rar.stretch_bcm_per_day = parseFloat(el.value) || 0);
       wire('rar-target-cost', el => STATE.rar.target_cost_per_bcm = parseFloat(el.value) || 0);
       wire('rar-day1',        el => STATE.rar.day1_reduction = (parseFloat(el.value) || 0) / 100);
+      // v1.9.3 — Click any daily bar to drill into Day View for that date
+      document.querySelectorAll('.rar-drill').forEach(el => {
+        el.addEventListener('click', () => {
+          const drillDate = el.dataset.rarDrill;
+          if (!drillDate) return;
+          STATE.filter_date = drillDate;
+          STATE.view = 'day';
+          const dateEl = document.getElementById('filter-date');
+          if (dateEl) dateEl.value = drillDate;
+          render();
+          toast(`Showing ${drillDate} in Day View`);
+        });
+      });
     }
     return;
   }
