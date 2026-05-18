@@ -517,8 +517,22 @@
       <div class="field">
         <span class="field-label">Ramps</span>
         <div class="field-input">
-          <input type="number" id="in-ramps" step="1" min="0" max="10" value="2"/>
-          <span class="field-unit">count (accel + decel)</span>
+          <input type="number" id="in-ramps" step="1" min="0" max="10" value="1"/>
+          <span class="field-unit">count</span>
+        </div>
+      </div>
+      <div class="field">
+        <span class="field-label">Ramp length</span>
+        <div class="field-input">
+          <input type="number" id="in-ramp-length" min="0" max="2000" step="10" value="200"/>
+          <span class="field-unit">m per ramp</span>
+        </div>
+      </div>
+      <div class="field">
+        <span class="field-label">Ramp grade</span>
+        <div class="field-input">
+          <input type="number" id="in-ramp-grade" min="0" max="20" step="0.1" value="6.0"/>
+          <span class="field-unit">% (ramp section only)</span>
         </div>
       </div>
       <div class="field">
@@ -725,6 +739,20 @@
           <div class="field-input">
             <input type="number" id="in-max-truck-ops" min="0" max="50" step="1" value="99"/>
             <span class="field-unit">cap (constrains optimiser & calc)</span>
+          </div>
+        </div>
+        <div class="field">
+          <span class="field-label">Side-cycle trucks</span>
+          <div class="field-input">
+            <input type="number" id="in-side-cycle-trucks" min="0" max="20" step="1" value="0"/>
+            <span class="field-unit">running a separate haul (excluded from match math)</span>
+          </div>
+        </div>
+        <div class="field">
+          <span class="field-label">First pass time</span>
+          <div class="field-input">
+            <input type="number" id="in-first-pass-sec" min="0" max="60" step="1" value="5"/>
+            <span class="field-unit">sec (operator pre-curls bucket during spot)</span>
           </div>
         </div>
         <div class="help">When fuel is free-issued, the L/hr burn is still tracked (saved in session for moat / reporting) but does not contribute to the displayed shift cost. Cost reference uses the diesel price regardless.</div>
@@ -1595,9 +1623,11 @@ function calc() {
   else if (passes_by_volume < passes_by_weight) constraint_type = "volume";
   else constraint_type = "balanced";
 
+  // v2.3 — First pass is short when operator pre-curls bucket during spot
+  const _firstPassSec = (s.first_pass_sec != null && s.first_pass_sec > 0) ? s.first_pass_sec : J;
   // LOADING CYCLE TIME — at the excavator
-  const U = J;                          // first pass = J
-  const V = J * (O - 1);                // following passes
+  const U = _firstPassSec;              // first pass (typically shortened by overlap with spot)
+  const V = J * Math.max(0, O - 1);     // following passes use full dig cycle
   const W = T_exch + U + V;             // total loading cycle (sec)
   const X = 3600 / W;                   // truck loads per hour theoretical
   const Y = X * P;                      // tonnes/hr at face
@@ -1613,11 +1643,27 @@ function calc() {
   // Empty downhill: when grade resistance exceeds rolling resistance (TR negative), truck is retarder-limited at v_max.
   const tr_loaded = road.rr_pct + s.grade_pct;          // pct: loaded uphill = rr + grade
   const tr_empty  = road.rr_pct - s.grade_pct;          // pct: empty downhill = rr - grade
-  const tr_loaded_dec = Math.max(0.005, tr_loaded / 100);  // decimal, floored
+  // v2.3 — Compute speeds per segment then time-weight, rather than single-grade speed.
+  function _segSpeedLoaded(tr_pct) {
+    const dec = Math.max(0.005, tr_pct / 100);
+    const v = (273.75 * truck.hp_grade) / (truck.gmw_loaded_kg * dec);
+    const gs = dec > 0.14 ? 0.85 : 1.0;
+    return Math.min(truck.v_max_kmh, Math.max(5, v * gs));
+  }
+  function _segSpeedEmpty(tr_pct) {
+    if (tr_pct <= 0) return truck.v_max_kmh;
+    const dec = Math.max(0.005, tr_pct / 100);
+    const v = (273.75 * truck.hp_grade) / (truck.gmw_empty_kg * dec);
+    const gs = dec > 0.14 ? 0.85 : 1.0;
+    return Math.min(truck.v_max_kmh, Math.max(10, v * gs));
+  }
+  const v_loaded_ramp = _segSpeedLoaded(tr_loaded_ramp);
+  const v_loaded_flat = _segSpeedLoaded(tr_loaded_flat);
+  const v_empty_ramp  = _segSpeedEmpty(tr_empty_ramp);
+  const v_empty_flat  = _segSpeedEmpty(tr_empty_flat);
+  // Legacy single speeds (weighted) for back-compat display
+  const tr_loaded_dec = Math.max(0.005, tr_loaded / 100);
   const tr_empty_dec  = Math.max(0.005, tr_empty / 100);
-  // GMW in kg, HP in horsepower → v in km/h (per Cat: v = 273.75 × HP / (GMW × TR))
-  // v1.8.2 — Gear-shift loss factor for steep grades (TR > 14%): real trucks downshift into
-  // low gear and lose 15% to the formula's predicted speed. Caps the optimistic flat-road formula.
   const v_loaded_formula = (273.75 * truck.hp_grade) / (truck.gmw_loaded_kg * tr_loaded_dec);
   const v_empty_formula  = tr_empty <= 0
     ? truck.v_max_kmh
@@ -1627,18 +1673,30 @@ function calc() {
   const v_steady_loaded = Math.min(truck.v_max_kmh, Math.max(5, v_loaded_formula * gear_shift_loaded));
   const v_steady_empty  = Math.min(truck.v_max_kmh, Math.max(10, v_empty_formula * gear_shift_empty));
 
-  // Distance-dependent avg-speed-vs-steady-speed correction (shorter haul = bigger accel/decel loss)
+  // v2.3 — Per-segment travel time. Apply accel/decel loss based on segment length.
+  function _segTime(distKm, vSteady, isLoaded) {
+    const lossCap = isLoaded ? 0.35 : 0.30;
+    const lossNum = isLoaded ? 0.5 : 0.4;
+    const loss = Math.min(lossCap, lossNum / Math.max(0.5, distKm));
+    const vAvg = vSteady * (1 - loss);
+    return (distKm / Math.max(0.01, vAvg)) * 60;  // minutes
+  }
+  const t_haul_loaded_ramp = _segTime(_rampDistKm, v_loaded_ramp, true);
+  const t_haul_loaded_flat = _segTime(_flatDistKm, v_loaded_flat, true);
+  const t_haul_loaded = t_haul_loaded_ramp + t_haul_loaded_flat;
+  const t_haul_empty_ramp = _segTime(_rampDistKm, v_empty_ramp, false);
+  const t_haul_empty_flat = _segTime(_flatDistKm, v_empty_flat, false);
+  const t_haul_empty = t_haul_empty_ramp + t_haul_empty_flat;
+  // Legacy avg-speed numbers for back-compat display
   const accel_loss_fraction_loaded = Math.min(0.35, 0.5 / Math.max(0.5, s.distance_km));
   const accel_loss_fraction_empty  = Math.min(0.30, 0.4 / Math.max(0.5, s.distance_km));
   const v_avg_loaded = v_steady_loaded * (1 - accel_loss_fraction_loaded);
   const v_avg_empty  = v_steady_empty  * (1 - accel_loss_fraction_empty);
 
-  const t_haul_loaded = (s.distance_km / v_avg_loaded) * 60;
-  const t_haul_empty  = (s.distance_km / v_avg_empty)  * 60;
-
-  // Kinematic penalties (ramps + intersections), separate so visible in timeline
-  const t_ramp_loaded = s.ramps * LHEX.ramp_penalty_min_loaded;
-  const t_ramp_empty  = s.ramps * LHEX.ramp_penalty_min_empty;
+  // v2.3 — Ramps are now modeled as a haul segment (length × grade) above, not a flat penalty.
+  // Keep the variable names for back-compat downstream, but zero them out.
+  const t_ramp_loaded = 0;
+  const t_ramp_empty  = 0;
   const t_intersection = s.intersections * LHEX.intersection_penalty_min_per_direction * 2;  // both directions
 
   const t_spot = width.spot_min;
@@ -1719,6 +1777,9 @@ function calc() {
 
   // Total trucks in mix (recompute defensively from per-class metrics)
   const total_trucks_in_mix = class_metrics.reduce((sum, c) => sum + c.count, 0);
+  // v2.3 — Effective trucks on THIS haul (subtracting side-cycle trucks running elsewhere)
+  const _sideCycle = Math.max(0, s.side_cycle_trucks || 0);
+  const effective_trucks_in_mix = Math.max(1, total_trucks_in_mix - _sideCycle);
   // Weighted-average payload for headline display
   const total_payload_bcm_per_round = class_metrics.reduce((sum, c) => sum + c.payload_bcm * c.count, 0);
   const avg_payload_bcm = total_trucks_in_mix > 0 ? total_payload_bcm_per_round / total_trucks_in_mix : payload_bcm;
@@ -1734,8 +1795,9 @@ function calc() {
   const BB_mix = Z_mix * AA / 60;
   const DD_mix = BB_mix / (1 + s.rehandle);
 
-  // Total truck-side throughput (sum across classes) at no-queue cycle
-  let truck_bcm_hr_no_queue = class_metrics.reduce((sum, c) => sum + c.total_throughput, 0);
+  // v2.3 — Total truck-side throughput scaled to reflect only trucks on this haul
+  const _scaleEffective = total_trucks_in_mix > 0 ? effective_trucks_in_mix / total_trucks_in_mix : 1;
+  let truck_bcm_hr_no_queue = class_metrics.reduce((sum, c) => sum + c.total_throughput, 0) * _scaleEffective;
   // v2.0.3 — Operator cap: if mix exceeds available operators, scale throughput pro-rata
   const _op_cap = (STATE.max_truck_operators != null && STATE.max_truck_operators > 0) ? STATE.max_truck_operators : Infinity;
   const _op_starved = total_trucks_in_mix > _op_cap;
@@ -1746,9 +1808,10 @@ function calc() {
 
   // Trucks needed for balance against the MIX-aware DD
   // Use the weighted average per-truck throughput; trucks_needed = DD / per_truck_throughput_avg
-  const per_truck_throughput_avg = total_trucks_in_mix > 0 ? truck_bcm_hr_no_queue / total_trucks_in_mix : 0;
+  // v2.3 — Use effective trucks for match factor (side-cycle excluded)
+  const per_truck_throughput_avg = effective_trucks_in_mix > 0 ? truck_bcm_hr_no_queue / effective_trucks_in_mix : 0;
   const trucks_needed_balanced = per_truck_throughput_avg > 0 ? DD_mix / per_truck_throughput_avg : 0;
-  const match_factor = trucks_needed_balanced > 0 ? total_trucks_in_mix / trucks_needed_balanced : 0;
+  const match_factor = trucks_needed_balanced > 0 ? effective_trucks_in_mix / trucks_needed_balanced : 0;
 
   // BINDING CONSTRAINT: min of dig-bound (DD_mix) and truck-bound (sum throughput)
   const constrained_bcm_hr = Math.min(DD_mix, truck_bcm_hr_no_queue);
@@ -2007,6 +2070,7 @@ const SUPERVISORS = [
   { id: 'tomas',   name: 'Tomas Heikkinen' },
   { id: 'craig',   name: 'Craig Twaddle' },
   { id: 'belinda', name: 'Belinda Forshaw' },
+  { id: 'stevie',  name: 'Stevie Kane' },
 ];
 const HELP_STATUSES = ['open', 'resolved', 'escalated'];
 
@@ -4405,6 +4469,17 @@ function bindFleetConfigInputs() {
     mto.value = STATE.max_truck_operators != null ? STATE.max_truck_operators : 99;
     mto.addEventListener('input', () => { STATE.max_truck_operators = parseInt(mto.value) || 99; render(); });
   }
+  // v2.3 — Side-cycle trucks + first-pass time
+  const sct = document.getElementById('in-side-cycle-trucks');
+  if (sct) {
+    sct.value = STATE.side_cycle_trucks != null ? STATE.side_cycle_trucks : 0;
+    sct.addEventListener('input', () => { STATE.side_cycle_trucks = parseInt(sct.value) || 0; render(); });
+  }
+  const fps = document.getElementById('in-first-pass-sec');
+  if (fps) {
+    fps.value = STATE.first_pass_sec != null ? STATE.first_pass_sec : 5;
+    fps.addEventListener('input', () => { STATE.first_pass_sec = parseInt(fps.value) || 5; render(); });
+  }
   // Shift total hours
   const sh = document.getElementById('in-shift-total-hrs');
   sh.value = STATE.shift_total_hours;
@@ -4480,6 +4555,8 @@ function boot() {
   bindInput('in-grade', 'grade_pct');
   bindInput('in-road', 'road');
   bindInput('in-ramps', 'ramps');
+  bindInput('in-ramp-length', 'ramp_length_m');
+  bindInput('in-ramp-grade', 'ramp_grade_pct');
   bindInput('in-intersections', 'intersections');
   bindInput('in-dump', 'dump');
   bindInput('in-dump-width', 'dump_width');
