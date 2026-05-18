@@ -778,6 +778,409 @@ function reallocationOpportunities(sessions) {
 // RENDER
 // =============================================================
 
+
+// =============================================================
+// v1.9.1 — RAR VIEW: 8-day rolling snapshot with volume, cost, utilisation charts
+// Format mirrors Tim's RAR — banded background, on-track/off-track coloured bars,
+// dotted target line. Period default = last 8 days ending most recent saved date.
+// =============================================================
+const RAR_DEFAULTS = {
+  target_bcm_per_day: 8400,    // regular daily target
+  stretch_bcm_per_day: 8700,   // stretch target
+  day1_reduction: 0.04,        // 4% reduction on day 1 (safety startup)
+  target_cost_per_bcm: 3.15,   // baseline budget $/bcm (HCOC current)
+  stretch_cost_per_bcm: 3.05,  // stretch cost (3% better than budget)
+  period_days: 8,              // 8:6 roster → 8 day on-cycle. Move to 14 when 7:7 continuous.
+  period_end: '2026-05-19',    // most recent roster end
+};
+
+function ensureRarState() {
+  if (!STATE.rar) STATE.rar = { ...RAR_DEFAULTS };
+  // Backfill any missing keys
+  for (const k in RAR_DEFAULTS) if (STATE.rar[k] === undefined) STATE.rar[k] = RAR_DEFAULTS[k];
+}
+
+// Returns array of N day-records ending on period_end, oldest first.
+// Each: { date, dateLabel, dow, target_bcm, actual_bcm, planned_bcm,
+//         actual_cost_per_bcm, planned_cost_per_bcm, sessions_count }
+function buildRarDays() {
+  ensureRarState();
+  const cfg = STATE.rar;
+  const end = new Date(cfg.period_end + 'T00:00:00');
+  const days = [];
+  for (let i = cfg.period_days - 1; i >= 0; i--) {
+    const d = new Date(end);
+    d.setDate(end.getDate() - i);
+    const iso = d.toISOString().slice(0, 10);
+    const dow = d.toLocaleDateString('en-AU', { weekday: 'short' });
+    const dateLabel = d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' }).replace(/\s/g, '-');
+    days.push({ date: iso, dateLabel, dow });
+  }
+  // Day 1 (oldest) gets the day-1 reduction
+  days.forEach((d, i) => {
+    d.target_bcm = i === 0 ? cfg.target_bcm_per_day * (1 - cfg.day1_reduction) : cfg.target_bcm_per_day;
+    d.stretch_bcm = i === 0 ? cfg.stretch_bcm_per_day * (1 - cfg.day1_reduction) : cfg.stretch_bcm_per_day;
+    // Collect sessions for this date
+    const dayS = STATE.sessions.filter(s => s.date === d.date);
+    d.sessions_count = dayS.length;
+    d.planned_bcm = dayS.reduce((s, x) => s + (x.production_bcm || 0), 0);
+    d.actual_bcm = dayS.reduce((s, x) => s + (x.actual_bcm != null ? x.actual_bcm : 0), 0);
+    // bcm-weighted cost
+    const totPlannedBcm = dayS.reduce((s, x) => s + (x.production_bcm || 0), 0);
+    const totPlannedCost = dayS.reduce((s, x) => s + (x.cost_per_bcm || 0) * (x.production_bcm || 0), 0);
+    d.planned_cost_per_bcm = totPlannedBcm > 0 ? totPlannedCost / totPlannedBcm : null;
+    const totActualBcm = dayS.reduce((s, x) => s + (x.actual_bcm || 0), 0);
+    const totActualCost = dayS.reduce((s, x) => s + (x.actual_cost || 0), 0);
+    d.actual_cost_per_bcm = totActualBcm > 0 ? totActualCost / totActualBcm : null;
+    // Use actual if available; else planned
+    d.display_bcm = d.actual_bcm > 0 ? d.actual_bcm : d.planned_bcm;
+    d.display_cost = d.actual_cost_per_bcm != null ? d.actual_cost_per_bcm : d.planned_cost_per_bcm;
+    d.is_actual = d.actual_bcm > 0;
+  });
+  // v1.9.1 — Compute cumulative actuals + cumulative target across the period (for dotted lines)
+  let cumActualBcm = 0, cumTargetBcm = 0, cumStretchBcm = 0;
+  let cumActualCost = 0, cumActualBcmForCost = 0;
+  days.forEach(d => {
+    cumActualBcm += d.display_bcm || 0;
+    cumTargetBcm += d.target_bcm;
+    cumStretchBcm += d.stretch_bcm;
+    if (d.actual_cost_per_bcm != null && d.actual_bcm > 0) {
+      cumActualCost += d.actual_cost_per_bcm * d.actual_bcm;
+      cumActualBcmForCost += d.actual_bcm;
+    } else if (d.planned_cost_per_bcm != null && d.planned_bcm > 0) {
+      cumActualCost += d.planned_cost_per_bcm * d.planned_bcm;
+      cumActualBcmForCost += d.planned_bcm;
+    }
+    d.cum_actual_bcm = cumActualBcm;
+    d.cum_target_bcm = cumTargetBcm;
+    d.cum_stretch_bcm = cumStretchBcm;
+    d.cum_cost_per_bcm = cumActualBcmForCost > 0 ? cumActualCost / cumActualBcmForCost : null;
+  });
+  return days;
+}
+
+// ── Generic SVG chart helpers ─────────────────────────────────
+function rarChartFrame(width, height, title, subtitle) {
+  return {
+    svgOpen: `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" style="width:100%;max-width:1000px;height:auto;display:block;margin:0 auto;background:transparent;">`,
+    title, subtitle, width, height,
+  };
+}
+
+// Volume bar chart
+function renderRarVolumeChart(days) {
+  const W = 1000, H = 380;
+  const padL = 70, padR = 30, padT = 50, padB = 70;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+  const maxTarget = Math.max(...days.map(d => d.target_bcm));
+  const maxDisplay = Math.max(...days.map(d => d.display_bcm), maxTarget);
+  // Round up to nearest 2000
+  const yMax = Math.ceil(maxDisplay * 1.15 / 2000) * 2000;
+  const yMin = 0;
+  const yRange = yMax - yMin;
+  const barW = chartW / days.length * 0.65;
+  const bandW = chartW / days.length;
+
+  const yToPx = (v) => padT + chartH - ((v - yMin) / yRange) * chartH;
+
+  // On-track band (green tint above target avg)
+  const targetAvg = days.reduce((s, d) => s + d.target_bcm, 0) / days.length;
+  const targetY = yToPx(targetAvg);
+  const onTrackBand = `<rect x="${padL}" y="${padT}" width="${chartW}" height="${targetY - padT}" fill="rgba(74,138,82,0.10)"/>`;
+  const offTrackBand = `<rect x="${padL}" y="${targetY}" width="${chartW}" height="${padT + chartH - targetY}" fill="rgba(176,72,48,0.12)"/>`;
+
+  // Y-axis grid + labels
+  const yTicks = [];
+  for (let v = 0; v <= yMax; v += 2000) {
+    yTicks.push(`<line x1="${padL}" y1="${yToPx(v)}" x2="${W - padR}" y2="${yToPx(v)}" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="2 2"/>
+                 <text x="${padL - 8}" y="${yToPx(v) + 4}" text-anchor="end" font-family="Barlow Condensed" font-size="11" fill="var(--text2)">${(v/1000).toFixed(0)}k</text>`);
+  }
+
+  // Per-day target line (regular) + stretch line + cumulative actual line
+  const targetLine = days.map((d, i) => {
+    const x1 = padL + i * bandW;
+    const x2 = padL + (i + 1) * bandW;
+    const y = yToPx(d.target_bcm);
+    return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="rgba(255,255,255,0.85)" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+  }).join('');
+  // Stretch line (steeper dashes, copper colour)
+  const stretchLine = days.map((d, i) => {
+    const x1 = padL + i * bandW;
+    const x2 = padL + (i + 1) * bandW;
+    const y = yToPx(d.stretch_bcm);
+    return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="#e8a855" stroke-width="1.5" stroke-dasharray="2 2"/>`;
+  }).join('');
+  // Cumulative production line (dotted, takes day's running total normalised against day-N target avg)
+  // Plot at the per-day-equivalent so it's comparable to bars: cum_actual / days_elapsed
+  const cumPts = days.map((d, i) => {
+    const dayAvg = (i + 1) > 0 ? d.cum_actual_bcm / (i + 1) : 0;
+    const x = padL + i * bandW + bandW / 2;
+    const y = yToPx(dayAvg);
+    return { x, y, val: dayAvg };
+  });
+  const cumPath = `M ${cumPts.map(p => `${p.x} ${p.y}`).join(' L ')}`;
+  const cumLine = `<path d="${cumPath}" fill="none" stroke="#a8c0a0" stroke-width="2.5" stroke-dasharray="5 3"/>
+                   ${cumPts.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#a8c0a0" stroke="var(--bg0)" stroke-width="1"/>`).join('')}`;
+
+  // Bars + labels
+  const bars = days.map((d, i) => {
+    const x = padL + i * bandW + (bandW - barW) / 2;
+    const y = yToPx(d.display_bcm);
+    const h = (padT + chartH) - y;
+    const onTrack = d.display_bcm >= d.target_bcm;
+    const fillCol = h < 1 ? 'var(--border)' : onTrack ? '#4a8a52' : '#b04830';
+    const labelY = h < 18 ? y - 6 : y + 14;
+    const labelCol = h < 18 ? 'var(--text0)' : 'white';
+    const dotted = d.is_actual ? '' : ' stroke-dasharray="3 2" stroke="rgba(255,255,255,0.4)" stroke-width="1"';
+    return `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(0,h)}" fill="${fillCol}"${dotted}/>
+      ${h > 6 ? `<text x="${x + barW/2}" y="${labelY}" text-anchor="middle" font-family="DM Mono" font-size="11" font-weight="600" fill="${labelCol}">${d.display_bcm > 0 ? fmt(d.display_bcm, 0) : '—'}</text>` : ''}
+      <text x="${x + barW/2}" y="${padT + chartH + 18}" text-anchor="middle" font-family="Barlow Condensed" font-size="10.5" fill="var(--text1)">${d.dateLabel}</text>
+      <text x="${x + barW/2}" y="${padT + chartH + 34}" text-anchor="middle" font-family="Barlow" font-size="10" fill="var(--text2)">${d.dow}</text>`;
+  }).join('');
+
+  // Title
+  const title = `<text x="${padL}" y="24" font-family="Barlow" font-weight="600" font-size="14" fill="var(--text0)">Daily volume — bcm</text>
+                 <text x="${padL}" y="40" font-family="Barlow" font-size="11" fill="var(--text2)">${days.length} day window · target ${fmt(STATE.rar.target_bcm_per_day, 0)} bcm/day · stretch ${fmt(STATE.rar.stretch_bcm_per_day, 0)} · day-1 reduced ${(STATE.rar.day1_reduction * 100).toFixed(0)}% for safety startup</text>`;
+
+  // Legend
+  const legend = `<g transform="translate(${W - padR - 460}, 24)">
+    <rect x="0" y="-10" width="14" height="14" fill="#4a8a52"/><text x="20" y="0" font-family="Barlow" font-size="11" fill="var(--text1)">On track</text>
+    <rect x="80" y="-10" width="14" height="14" fill="#b04830"/><text x="100" y="0" font-family="Barlow" font-size="11" fill="var(--text1)">Off track</text>
+    <line x1="170" y1="-3" x2="184" y2="-3" stroke="white" stroke-width="1.5" stroke-dasharray="4 3"/><text x="190" y="0" font-family="Barlow" font-size="11" fill="var(--text1)">Target</text>
+    <line x1="240" y1="-3" x2="254" y2="-3" stroke="#e8a855" stroke-width="1.5" stroke-dasharray="2 2"/><text x="260" y="0" font-family="Barlow" font-size="11" fill="var(--text1)">Stretch</text>
+    <line x1="310" y1="-3" x2="324" y2="-3" stroke="#a8c0a0" stroke-width="2.5" stroke-dasharray="5 3"/><text x="330" y="0" font-family="Barlow" font-size="11" fill="var(--text1)">Cum avg</text>
+  </g>`;
+
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="width:100%;max-width:1000px;height:auto;display:block;margin:0 auto;">
+    ${onTrackBand}${offTrackBand}
+    ${yTicks.join('')}
+    ${bars}
+    ${targetLine}${stretchLine}${cumLine}
+    ${title}${legend}
+  </svg>`;
+}
+
+// Cost bar chart
+function renderRarCostChart(days) {
+  const W = 1000, H = 380;
+  const padL = 70, padR = 30, padT = 50, padB = 70;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+  const target = STATE.rar.target_cost_per_bcm;
+  // Y range
+  const maxDisplay = Math.max(...days.map(d => d.display_cost || 0), target * 1.4);
+  const yMax = Math.ceil(maxDisplay / 0.5) * 0.5;
+  const yRange = yMax;
+  const barW = chartW / days.length * 0.65;
+  const bandW = chartW / days.length;
+
+  const yToPx = (v) => padT + chartH - (v / yRange) * chartH;
+
+  // Bands
+  const targetY = yToPx(target);
+  const onTrackBand = `<rect x="${padL}" y="${targetY}" width="${chartW}" height="${padT + chartH - targetY}" fill="rgba(74,138,82,0.10)"/>`;
+  const offTrackBand = `<rect x="${padL}" y="${padT}" width="${chartW}" height="${targetY - padT}" fill="rgba(176,72,48,0.12)"/>`;
+
+  // Grid
+  const yTicks = [];
+  for (let v = 0; v <= yMax; v += 1.0) {
+    yTicks.push(`<line x1="${padL}" y1="${yToPx(v)}" x2="${W - padR}" y2="${yToPx(v)}" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="2 2"/>
+                 <text x="${padL - 8}" y="${yToPx(v) + 4}" text-anchor="end" font-family="Barlow Condensed" font-size="11" fill="var(--text2)">$${v.toFixed(2)}</text>`);
+  }
+
+  // Target line (flat across all days)
+  const targetLine = `<line x1="${padL}" y1="${targetY}" x2="${W - padR}" y2="${targetY}" stroke="rgba(255,255,255,0.85)" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+
+  // Cumulative cost line (running avg)
+  let cumBcm = 0, cumCost = 0;
+  const cumPoints = days.map((d, i) => {
+    cumBcm += d.display_bcm || 0;
+    cumCost += (d.display_cost || 0) * (d.display_bcm || 0);
+    const cumAvg = cumBcm > 0 ? cumCost / cumBcm : 0;
+    const x = padL + i * bandW + bandW / 2;
+    const y = yToPx(cumAvg);
+    return { x, y, val: cumAvg };
+  });
+  const cumPath = `M ${cumPoints.map(p => `${p.x} ${p.y}`).join(' L ')}`;
+  const cumLine = `<path d="${cumPath}" fill="none" stroke="#a8c0a0" stroke-width="2" stroke-dasharray="3 2"/>
+                   ${cumPoints.map(p => `<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="#a8c0a0"/>`).join('')}`;
+
+  // Bars
+  const bars = days.map((d, i) => {
+    if (d.display_cost == null || d.display_cost <= 0) {
+      return `<text x="${padL + i * bandW + bandW/2}" y="${padT + chartH + 18}" text-anchor="middle" font-family="Barlow Condensed" font-size="10.5" fill="var(--text1)">${d.dateLabel}</text>
+              <text x="${padL + i * bandW + bandW/2}" y="${padT + chartH + 34}" text-anchor="middle" font-family="Barlow" font-size="10" fill="var(--text2)">${d.dow}</text>`;
+    }
+    const x = padL + i * bandW + (bandW - barW) / 2;
+    const y = yToPx(d.display_cost);
+    const h = (padT + chartH) - y;
+    const onTrack = d.display_cost <= target;
+    const fillCol = onTrack ? '#4a8a52' : '#b04830';
+    const dotted = d.is_actual ? '' : ' stroke-dasharray="3 2" stroke="rgba(255,255,255,0.4)" stroke-width="1"';
+    return `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(0,h)}" fill="${fillCol}"${dotted}/>
+      <text x="${x + barW/2}" y="${y + 14}" text-anchor="middle" font-family="DM Mono" font-size="11" font-weight="600" fill="white">$${d.display_cost.toFixed(2)}</text>
+      <text x="${x + barW/2}" y="${padT + chartH + 18}" text-anchor="middle" font-family="Barlow Condensed" font-size="10.5" fill="var(--text1)">${d.dateLabel}</text>
+      <text x="${x + barW/2}" y="${padT + chartH + 34}" text-anchor="middle" font-family="Barlow" font-size="10" fill="var(--text2)">${d.dow}</text>`;
+  }).join('');
+
+  const title = `<text x="${padL}" y="24" font-family="Barlow" font-weight="600" font-size="14" fill="var(--text0)">Cost per bcm ($/bcm)</text>
+                 <text x="${padL}" y="40" font-family="Barlow" font-size="11" fill="var(--text2)">${days.length} day window · target $${target.toFixed(2)} · cumulative running avg overlay</text>`;
+  const legend = `<g transform="translate(${W - padR - 320}, 24)">
+    <rect x="0" y="-10" width="14" height="14" fill="#4a8a52"/><text x="20" y="0" font-family="Barlow" font-size="11" fill="var(--text1)">On track</text>
+    <rect x="80" y="-10" width="14" height="14" fill="#b04830"/><text x="100" y="0" font-family="Barlow" font-size="11" fill="var(--text1)">Off track</text>
+    <line x1="170" y1="-3" x2="184" y2="-3" stroke="white" stroke-width="1.5" stroke-dasharray="4 3"/><text x="190" y="0" font-family="Barlow" font-size="11" fill="var(--text1)">Target</text>
+    <line x1="240" y1="-3" x2="254" y2="-3" stroke="#a8c0a0" stroke-width="2" stroke-dasharray="3 2"/><text x="260" y="0" font-family="Barlow" font-size="11" fill="var(--text1)">Cum avg</text>
+  </g>`;
+
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="width:100%;max-width:1000px;height:auto;display:block;margin:0 auto;">
+    ${onTrackBand}${offTrackBand}
+    ${yTicks.join('')}
+    ${bars}
+    ${targetLine}${cumLine}
+    ${title}${legend}
+  </svg>`;
+}
+
+// Utilisation chart — excavator + truck SMU per day
+function renderRarUtilisationChart(days) {
+  const W = 1000, H = 360;
+  const padL = 70, padR = 30, padT = 50, padB = 70;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+  const targetSmu = 10;  // typical Tier 1
+  const yMax = 12;
+  const yToPx = (v) => padT + chartH - (v / yMax) * chartH;
+  const bandW = chartW / days.length;
+  const barW = bandW * 0.30;
+
+  // Background
+  const targetY = yToPx(targetSmu);
+  const onBand = `<rect x="${padL}" y="${targetY}" width="${chartW}" height="${padT + chartH - targetY}" fill="rgba(74,138,82,0.08)"/>`;
+  const offBand = `<rect x="${padL}" y="${padT}" width="${chartW}" height="${targetY - padT}" fill="rgba(176,72,48,0.06)"/>`;
+
+  const yTicks = [];
+  for (let v = 0; v <= yMax; v += 2) {
+    yTicks.push(`<line x1="${padL}" y1="${yToPx(v)}" x2="${W - padR}" y2="${yToPx(v)}" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="2 2"/>
+                 <text x="${padL - 8}" y="${yToPx(v) + 4}" text-anchor="end" font-family="Barlow Condensed" font-size="11" fill="var(--text2)">${v}</text>`);
+  }
+  const targetLine = `<line x1="${padL}" y1="${targetY}" x2="${W - padR}" y2="${targetY}" stroke="rgba(255,255,255,0.85)" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+
+  // For each day, build avg exc SMU + avg truck SMU per active op
+  const bars = days.map((d, i) => {
+    const dayS = STATE.sessions.filter(s => s.date === d.date);
+    const excSmu = dayS.length > 0 ? dayS.reduce((s, x) => s + (x.planned_smu || 0), 0) / dayS.length : 0;
+    const truckSmu = excSmu;  // simplified — same SMU drives both for a balanced fleet
+    const xBase = padL + i * bandW + bandW / 2;
+    const xExc = xBase - barW - 2;
+    const xTrk = xBase + 2;
+    const yE = yToPx(excSmu); const hE = (padT + chartH) - yE;
+    const yT = yToPx(truckSmu); const hT = (padT + chartH) - yT;
+    const colE = excSmu >= targetSmu ? '#c8833a' : '#d2a570';
+    const colT = truckSmu >= targetSmu ? '#7a8b6a' : '#a3b591';
+    const showVal = excSmu > 0;
+    return `${showVal ? `<rect x="${xExc}" y="${yE}" width="${barW}" height="${Math.max(0,hE)}" fill="${colE}"/>
+      <text x="${xExc + barW/2}" y="${yE - 4}" text-anchor="middle" font-family="DM Mono" font-size="10" fill="var(--text0)">${excSmu.toFixed(1)}</text>
+      <rect x="${xTrk}" y="${yT}" width="${barW}" height="${Math.max(0,hT)}" fill="${colT}"/>
+      <text x="${xTrk + barW/2}" y="${yT - 4}" text-anchor="middle" font-family="DM Mono" font-size="10" fill="var(--text0)">${truckSmu.toFixed(1)}</text>` : ''}
+      <text x="${xBase}" y="${padT + chartH + 18}" text-anchor="middle" font-family="Barlow Condensed" font-size="10.5" fill="var(--text1)">${d.dateLabel}</text>
+      <text x="${xBase}" y="${padT + chartH + 34}" text-anchor="middle" font-family="Barlow" font-size="10" fill="var(--text2)">${d.dow}</text>`;
+  }).join('');
+
+  const title = `<text x="${padL}" y="24" font-family="Barlow" font-weight="600" font-size="14" fill="var(--text0)">SMU utilisation per shift</text>
+                 <text x="${padL}" y="40" font-family="Barlow" font-size="11" fill="var(--text2)">Excavator + truck average SMU per active operation · target ${targetSmu} SMU</text>`;
+  const legend = `<g transform="translate(${W - padR - 240}, 24)">
+    <rect x="0" y="-10" width="14" height="14" fill="#c8833a"/><text x="20" y="0" font-family="Barlow" font-size="11" fill="var(--text1)">Excavator</text>
+    <rect x="80" y="-10" width="14" height="14" fill="#7a8b6a"/><text x="100" y="0" font-family="Barlow" font-size="11" fill="var(--text1)">Trucks</text>
+    <line x1="160" y1="-3" x2="174" y2="-3" stroke="white" stroke-width="1.5" stroke-dasharray="4 3"/><text x="180" y="0" font-family="Barlow" font-size="11" fill="var(--text1)">Target ${targetSmu}</text>
+  </g>`;
+
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="width:100%;max-width:1000px;height:auto;display:block;margin:0 auto;">
+    ${onBand}${offBand}
+    ${yTicks.join('')}
+    ${bars}
+    ${targetLine}
+    ${title}${legend}
+  </svg>`;
+}
+
+function renderRarConfigBar(days) {
+  ensureRarState();
+  const cfg = STATE.rar;
+  // Sum totals
+  const tot_actual = days.reduce((s, d) => s + (d.actual_bcm || 0), 0);
+  const tot_planned = days.reduce((s, d) => s + (d.planned_bcm || 0), 0);
+  const tot_target = days.reduce((s, d) => s + d.target_bcm, 0);
+  const tot_actual_cost = days.reduce((s, d) => s + (d.actual_cost_per_bcm || 0) * (d.actual_bcm || 0), 0);
+  const tot_actual_bcm_for_cost = days.reduce((s, d) => s + (d.actual_bcm || 0), 0);
+  const wAvgCost = tot_actual_bcm_for_cost > 0 ? tot_actual_cost / tot_actual_bcm_for_cost : null;
+  const vsTarget = tot_target > 0 ? ((tot_actual || tot_planned) / tot_target - 1) * 100 : 0;
+
+  return `<div class="card" style="margin-bottom:16px;">
+    <div class="card-header">
+      <span class="card-title">RAR — ${cfg.period_days}-day snapshot</span>
+      <span class="card-subtitle">period ending ${cfg.period_end}</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;align-items:start;">
+      <div>
+        <label style="display:block;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:11px;color:var(--text2);margin-bottom:4px;">Period end</label>
+        <input type="date" id="rar-end" value="${cfg.period_end}" style="width:100%;padding:8px;background:var(--bg1);border:1px solid var(--border);color:var(--text0);font-family:'DM Mono';border-radius:3px;"/>
+      </div>
+      <div>
+        <label style="display:block;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:11px;color:var(--text2);margin-bottom:4px;">Period days</label>
+        <select id="rar-days" style="width:100%;padding:8px;background:var(--bg1);border:1px solid var(--border);color:var(--text0);font-family:'Barlow';border-radius:3px;">
+          <option value="8" ${cfg.period_days === 8 ? 'selected' : ''}>8 (8:6 roster)</option>
+          <option value="14" ${cfg.period_days === 14 ? 'selected' : ''}>14 (7:7 continuous)</option>
+          <option value="7" ${cfg.period_days === 7 ? 'selected' : ''}>7</option>
+          <option value="30" ${cfg.period_days === 30 ? 'selected' : ''}>30</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:11px;color:var(--text2);margin-bottom:4px;">Volume target (bcm/day)</label>
+        <input type="number" id="rar-target-bcm" value="${cfg.target_bcm_per_day}" step="100" style="width:100%;padding:8px;background:var(--bg1);border:1px solid var(--border);color:var(--text0);font-family:'DM Mono';border-radius:3px;"/>
+      </div>
+      <div>
+        <label style="display:block;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:11px;color:var(--text2);margin-bottom:4px;">Volume stretch (bcm/day)</label>
+        <input type="number" id="rar-stretch-bcm" value="${cfg.stretch_bcm_per_day}" step="100" style="width:100%;padding:8px;background:var(--bg1);border:1px solid var(--border);color:var(--text0);font-family:'DM Mono';border-radius:3px;"/>
+      </div>
+      <div>
+        <label style="display:block;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:11px;color:var(--text2);margin-bottom:4px;">Cost target ($/bcm)</label>
+        <input type="number" id="rar-target-cost" value="${cfg.target_cost_per_bcm}" step="0.05" style="width:100%;padding:8px;background:var(--bg1);border:1px solid var(--border);color:var(--text0);font-family:'DM Mono';border-radius:3px;"/>
+      </div>
+      <div>
+        <label style="display:block;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:11px;color:var(--text2);margin-bottom:4px;">Day-1 reduction (UT startup)</label>
+        <input type="number" id="rar-day1" value="${(cfg.day1_reduction * 100).toFixed(0)}" step="1" style="width:100%;padding:8px;background:var(--bg1);border:1px solid var(--border);color:var(--text0);font-family:'DM Mono';border-radius:3px;"/>
+        <span style="font-family:'Barlow';color:var(--text2);font-size:10px;">% of daily target reduced day 1</span>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
+      <div><div style="font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:10px;color:var(--text2);">Period total</div><div style="font-family:'DM Mono';font-size:18px;color:var(--text0);font-weight:600;">${fmt(tot_actual || tot_planned, 0)} bcm</div><div style="font-family:'Barlow';font-size:11px;color:${vsTarget >= 0 ? 'var(--green)' : 'var(--red)'};">${vsTarget >= 0 ? '+' : ''}${vsTarget.toFixed(1)}% vs target</div></div>
+      <div><div style="font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:10px;color:var(--text2);">Period target</div><div style="font-family:'DM Mono';font-size:18px;color:var(--text0);font-weight:600;">${fmt(tot_target, 0)} bcm</div></div>
+      <div><div style="font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:10px;color:var(--text2);">Weighted avg cost</div><div style="font-family:'DM Mono';font-size:18px;color:var(--text0);font-weight:600;">${wAvgCost != null ? '$' + wAvgCost.toFixed(2) : '—'}</div><div style="font-family:'Barlow';font-size:11px;color:var(--text2);">vs $${cfg.target_cost_per_bcm.toFixed(2)} target</div></div>
+      <div><div style="font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:10px;color:var(--text2);">Days with actuals</div><div style="font-family:'DM Mono';font-size:18px;color:var(--text0);font-weight:600;">${days.filter(d => d.is_actual).length} / ${days.length}</div><div style="font-family:'Barlow';font-size:11px;color:var(--text2);">dotted bars = predicted only</div></div>
+    </div>
+  </div>`;
+}
+
+function renderRARView() {
+  ensureRarState();
+  const days = buildRarDays();
+  const html = `${renderRarConfigBar(days)}
+    <div class="card"><div class="card-header"><span class="card-title">Daily volume</span><span class="card-subtitle">bcm per shift</span></div>${renderRarVolumeChart(days)}</div>
+    <div class="card"><div class="card-header"><span class="card-title">Daily cost</span><span class="card-subtitle">$/bcm</span></div>${renderRarCostChart(days)}</div>
+    <div class="card"><div class="card-header"><span class="card-title">SMU utilisation</span><span class="card-subtitle">excavator + truck avg per shift</span></div>${renderRarUtilisationChart(days)}</div>`;
+  document.getElementById('container').innerHTML = html;
+  // Wire config inputs
+  const wire = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('input', () => { fn(el); STATE.tab = 'rar'; render(); }); };
+  wire('rar-end',         el => STATE.rar.period_end = el.value);
+  wire('rar-days',        el => STATE.rar.period_days = parseInt(el.value) || 8);
+  wire('rar-target-bcm',  el => STATE.rar.target_bcm_per_day = parseFloat(el.value) || 0);
+  wire('rar-stretch-bcm', el => STATE.rar.stretch_bcm_per_day = parseFloat(el.value) || 0);
+  wire('rar-target-cost', el => STATE.rar.target_cost_per_bcm = parseFloat(el.value) || 0);
+  wire('rar-day1',        el => STATE.rar.day1_reduction = (parseFloat(el.value) || 0) / 100);
+}
+
+
 function render() {
   const c = document.getElementById('container');
   // Always show view tabs so the user sees the app structure
@@ -785,6 +1188,7 @@ function render() {
     <div class="view-tab ${STATE.view === 'day' ? 'active' : ''}" data-view="day">Day View</div>
     <div class="view-tab ${STATE.view === 'trends' ? 'active' : ''}" data-view="trends">Trends</div>
     <div class="view-tab ${STATE.view === 'report' ? 'active' : ''}" data-view="report">HELP Report</div>
+    <div class="view-tab ${STATE.view === 'rar' ? 'active' : ''}" data-view="rar">RAR</div>
   </div>`;
   if (STATE.sessions.length === 0) {
     c.innerHTML = tabsHtml + `
@@ -811,7 +1215,38 @@ function render() {
     <div class="view-tab ${STATE.view === 'day' ? 'active' : ''}" data-view="day">Day View</div>
     <div class="view-tab ${STATE.view === 'trends' ? 'active' : ''}" data-view="trends">Trends</div>
     <div class="view-tab ${STATE.view === 'report' ? 'active' : ''}" data-view="report">HELP Report</div>
+    <div class="view-tab ${STATE.view === 'rar' ? 'active' : ''}" data-view="rar">RAR</div>
   </div>`;
+
+  // v1.9.1 — RAR view (8-day snapshot)
+  if (STATE.view === 'rar') {
+    c.innerHTML = `<div class="view-tabs">
+      <div class="view-tab ${STATE.view === 'day' ? 'active' : ''}" data-view="day">Day View</div>
+      <div class="view-tab ${STATE.view === 'trends' ? 'active' : ''}" data-view="trends">Trends</div>
+      <div class="view-tab ${STATE.view === 'report' ? 'active' : ''}" data-view="report">HELP Report</div>
+      <div class="view-tab active" data-view="rar">RAR</div>
+    </div>` + '<div id="rar-host"></div>';
+    bindViewTabs();
+    // Append RAR content into rar-host
+    const host = document.getElementById('rar-host');
+    if (host) {
+      // Reuse renderRARView but redirect output into rar-host
+      const days = buildRarDays();
+      host.innerHTML = renderRarConfigBar(days) +
+        '<div class="card"><div class="card-header"><span class="card-title">Daily volume</span><span class="card-subtitle">bcm per shift</span></div>' + renderRarVolumeChart(days) + '</div>' +
+        '<div class="card"><div class="card-header"><span class="card-title">Daily cost</span><span class="card-subtitle">$/bcm</span></div>' + renderRarCostChart(days) + '</div>' +
+        '<div class="card"><div class="card-header"><span class="card-title">SMU utilisation</span><span class="card-subtitle">excavator + truck avg per shift</span></div>' + renderRarUtilisationChart(days) + '</div>';
+      // Wire config inputs
+      const wire = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('input', () => { fn(el); render(); }); };
+      wire('rar-end',         el => STATE.rar.period_end = el.value);
+      wire('rar-days',        el => STATE.rar.period_days = parseInt(el.value) || 8);
+      wire('rar-target-bcm',  el => STATE.rar.target_bcm_per_day = parseFloat(el.value) || 0);
+      wire('rar-stretch-bcm', el => STATE.rar.stretch_bcm_per_day = parseFloat(el.value) || 0);
+      wire('rar-target-cost', el => STATE.rar.target_cost_per_bcm = parseFloat(el.value) || 0);
+      wire('rar-day1',        el => STATE.rar.day1_reduction = (parseFloat(el.value) || 0) / 100);
+    }
+    return;
+  }
 
   // Trends view (v0.3)
   if (STATE.view === 'trends') {
