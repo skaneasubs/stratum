@@ -795,9 +795,13 @@ const RAR_DEFAULTS = {
 };
 
 function ensureRarState() {
-  if (!STATE.rar) STATE.rar = { ...RAR_DEFAULTS };
-  // Backfill any missing keys
-  for (const k in RAR_DEFAULTS) if (STATE.rar[k] === undefined) STATE.rar[k] = RAR_DEFAULTS[k];
+  // v1.9.2 — period_end defaults to yesterday (we report on day-prior actuals)
+  const yest = new Date();
+  yest.setDate(yest.getDate() - 1);
+  const yestISO = yest.toISOString().slice(0, 10);
+  const defaults = { ...RAR_DEFAULTS, period_end: yestISO };
+  if (!STATE.rar) STATE.rar = { ...defaults };
+  for (const k in defaults) if (STATE.rar[k] === undefined) STATE.rar[k] = defaults[k];
 }
 
 // Returns array of N day-records ending on period_end, oldest first.
@@ -858,6 +862,151 @@ function buildRarDays() {
   });
   return days;
 }
+
+
+
+// v1.9.2 — Insight builder: pulls "so what" narrative for the period.
+// Driver analysis: actual dig rate vs plan, UofA vs plan, top loss reasons.
+function buildRarInsights(days) {
+  // Restrict source sessions to those whose date lies within the period (today-1 minus N+1 days)
+  const dayDates = new Set(days.map(d => d.date));
+  const sessionsInPeriod = STATE.sessions.filter(s => dayDates.has(s.date));
+
+  // Schedule — actual vs target volume, dig rate, UofA
+  const totActualBcm  = days.reduce((s, d) => s + (d.actual_bcm || 0), 0);
+  const totPlannedBcm = days.reduce((s, d) => s + (d.planned_bcm || 0), 0);
+  const totTargetBcm  = days.reduce((s, d) => s + d.target_bcm, 0);
+  const totStretchBcm = days.reduce((s, d) => s + d.stretch_bcm, 0);
+  const display_total = totActualBcm > 0 ? totActualBcm : totPlannedBcm;
+  const schedPct  = totTargetBcm  > 0 ? (display_total / totTargetBcm  - 1) * 100 : 0;
+  const stretchPct = totStretchBcm > 0 ? (display_total / totStretchBcm - 1) * 100 : 0;
+
+  // Dig rate: bcm/SMU actual vs planned (use sessions only)
+  let actualBcm = 0, actualSmu = 0, plannedBcm = 0, plannedSmu = 0;
+  sessionsInPeriod.forEach(s => {
+    actualBcm  += s.actual_bcm    || 0;
+    actualSmu  += s.actual_hrs    || 0;   // tracker CSV may bring actual SMU
+    plannedBcm += s.production_bcm|| 0;
+    plannedSmu += s.planned_smu   || 0;
+  });
+  const useActualSmu = actualSmu > 0;
+  const digActual  = useActualSmu && actualSmu > 0 ? actualBcm / actualSmu : 0;
+  const digPlanned = plannedSmu > 0 ? plannedBcm / plannedSmu : 0;
+  const digDelta   = digPlanned > 0 && digActual > 0 ? (digActual / digPlanned - 1) * 100 : null;
+
+  // UofA — actual SMU achieved divided by planned SMU (proxy for utilisation × availability)
+  const uofA = (useActualSmu && plannedSmu > 0) ? (actualSmu / plannedSmu) : null;
+  const uofADelta = uofA != null ? (uofA - 1) * 100 : null;
+
+  // Cost — weighted-average actual vs target
+  const totActualCost = days.reduce((s, d) => s + ((d.actual_cost_per_bcm || 0) * (d.actual_bcm || 0)), 0);
+  const totActualBcmForCost = days.reduce((s, d) => s + (d.actual_bcm || 0), 0);
+  const avgActualCost = totActualBcmForCost > 0 ? totActualCost / totActualBcmForCost : null;
+  const targetCost = STATE.rar.target_cost_per_bcm;
+  const costPct = (avgActualCost != null && targetCost > 0) ? (avgActualCost / targetCost - 1) * 100 : null;
+
+  // Cost breakdown — find biggest variances across sessions
+  let totPrim = 0, totAnc = 0, totLab = 0, totFuel = 0, totN = 0;
+  sessionsInPeriod.forEach(s => {
+    totPrim += s.cost_primary     || 0;
+    totAnc  += s.cost_ancillaries || 0;
+    totLab  += s.cost_labour      || 0;
+    totFuel += s.cost_fuel        || 0;
+    totN += 1;
+  });
+  const costMix = { primary: totPrim, ancillaries: totAnc, labour: totLab, fuel: totFuel };
+  // Sort cost categories by share for top contributors
+  const costSorted = Object.entries(costMix).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+  // Loss reasons — aggregate
+  const lossCounts = {};
+  const lossBcm    = {};
+  sessionsInPeriod.forEach(s => {
+    (s.loss_reasons || []).forEach(reason => {
+      lossCounts[reason] = (lossCounts[reason] || 0) + 1;
+      lossBcm[reason] = (lossBcm[reason] || 0) + (s.lost_production || 0);
+    });
+  });
+  const topLosses = Object.entries(lossCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+  return {
+    schedule: { displayTotal: display_total, totTarget: totTargetBcm, totStretch: totStretchBcm,
+                pct: schedPct, stretchPct, digActual, digPlanned, digDelta, uofA, uofADelta },
+    cost:     { avgActual: avgActualCost, target: targetCost, pct: costPct,
+                breakdown: costSorted, has_actuals: avgActualCost != null },
+    losses:   { top: topLosses, totals: lossBcm, sessions: totN },
+  };
+}
+
+function renderRarSoWhatCard(insights) {
+  const s = insights.schedule;
+  const c = insights.cost;
+  const l = insights.losses;
+  const schedVerb = s.pct >= 0 ? 'ahead of' : 'behind';
+  const schedCol  = s.pct >= 0 ? 'var(--green)' : 'var(--red)';
+  const stretchVerb = s.stretchPct >= 0 ? 'above' : 'below';
+  const stretchCol  = s.stretchPct >= 0 ? 'var(--green)' : 'var(--ochre)';
+  const costVerb = (c.pct != null && c.pct <= 0) ? 'under' : 'over';
+  const costCol  = (c.pct != null && c.pct <= 0) ? 'var(--green)' : 'var(--red)';
+
+  // Drivers — express in driver language ("driven by X dig rate and Y UofA")
+  const driverParts = [];
+  if (s.digDelta != null) {
+    driverParts.push(`actual dig rate <strong>${fmt(s.digActual, 0)} bcm/SMU</strong> vs plan <strong>${fmt(s.digPlanned, 0)}</strong> <span style="color:${s.digDelta >= 0 ? 'var(--green)' : 'var(--red)'};">[${s.digDelta >= 0 ? '+' : ''}${s.digDelta.toFixed(1)}%]</span>`);
+  } else if (s.digPlanned > 0) {
+    driverParts.push(`planned dig rate <strong>${fmt(s.digPlanned, 0)} bcm/SMU</strong> <span style="color:var(--text2);">[no actual SMU data yet]</span>`);
+  }
+  if (s.uofADelta != null) {
+    driverParts.push(`UofA <strong>${(s.uofA * 100).toFixed(0)}%</strong> vs plan <span style="color:${s.uofADelta >= 0 ? 'var(--green)' : 'var(--red)'};">[${s.uofADelta >= 0 ? '+' : ''}${s.uofADelta.toFixed(1)}%]</span>`);
+  }
+  const driversText = driverParts.length > 0 ? `driven by ${driverParts.join(' and ')}` : 'driver attribution needs actual SMU input';
+
+  // Cost narrative
+  let costText;
+  if (c.avgActual == null) {
+    costText = `No actuals reconciled yet for this period. Load the tracker CSV to populate cost variance and driver attribution.`;
+  } else {
+    const sigCats = c.breakdown.filter(([_, val]) => val > 0).slice(0, 3).map(([name, val]) => {
+      const pct = c.breakdown.reduce((sm, x) => sm + x[1], 0) > 0 ? (val / c.breakdown.reduce((sm, x) => sm + x[1], 0)) * 100 : 0;
+      return `<strong>${name}</strong> (${pct.toFixed(0)}% of total)`;
+    });
+    costText = `Actual cost <strong style="color:${costCol};">${Math.abs(c.pct).toFixed(1)}% ${costVerb}</strong> target — <strong>${fmtMoney(c.avgActual, 2)}/bcm</strong> vs <strong>${fmtMoney(c.target, 2)}/bcm</strong>. Composition: ${sigCats.join(', ')}.`;
+  }
+
+  // Lost opportunity
+  let lossText;
+  if (l.top.length === 0) {
+    lossText = `No specific loss reasons flagged in the period's ${l.sessions} session(s). Tracker reconciliation populates this once actuals arrive.`;
+  } else {
+    const lossParts = l.top.map(([reason, count]) => {
+      const bcm = l.totals[reason] || 0;
+      return `<strong>${escapeHtmlPB(reason)}</strong> (${count} session${count > 1 ? 's' : ''}${bcm > 0 ? ` · ${fmt(bcm, 0)} bcm lost` : ''})`;
+    });
+    lossText = `Top causes through the period: ${lossParts.join(', ')}.`;
+  }
+
+  return `<div class="card" style="background:linear-gradient(135deg, var(--bg2), var(--bg1));border-left:3px solid var(--copper);">
+    <div class="card-header">
+      <span class="card-title">So what</span>
+      <span class="card-subtitle">period summary · consulting narrative</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr;gap:14px;font-family:'Barlow';font-size:13.5px;line-height:1.65;color:var(--text0);">
+      <div>
+        <div style="color:var(--copperLight);font-weight:700;text-transform:uppercase;letter-spacing:0.10em;font-size:11px;font-family:'Barlow Condensed';margin-bottom:4px;">▸ Schedule</div>
+        Actual volume <strong style="color:${schedCol};">${Math.abs(s.pct).toFixed(1)}% ${schedVerb}</strong> planned target (${fmt(s.displayTotal, 0)} bcm vs ${fmt(s.totTarget, 0)} bcm target · <span style="color:${stretchCol};">${Math.abs(s.stretchPct).toFixed(1)}% ${stretchVerb} stretch</span>); ${driversText}.
+      </div>
+      <div>
+        <div style="color:var(--copperLight);font-weight:700;text-transform:uppercase;letter-spacing:0.10em;font-size:11px;font-family:'Barlow Condensed';margin-bottom:4px;">▸ Cost</div>
+        ${costText}
+      </div>
+      <div>
+        <div style="color:var(--copperLight);font-weight:700;text-transform:uppercase;letter-spacing:0.10em;font-size:11px;font-family:'Barlow Condensed';margin-bottom:4px;">▸ Lost opportunity</div>
+        ${lossText}
+      </div>
+    </div>
+  </div>`;
+}
+
 
 // ── Generic SVG chart helpers ─────────────────────────────────
 function rarChartFrame(width, height, title, subtitle) {
@@ -921,7 +1070,8 @@ function renderRarVolumeChart(days) {
   });
   const cumPath = `M ${cumPts.map(p => `${p.x} ${p.y}`).join(' L ')}`;
   const cumLine = `<path d="${cumPath}" fill="none" stroke="#a8c0a0" stroke-width="2.5" stroke-dasharray="5 3"/>
-                   ${cumPts.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#a8c0a0" stroke="var(--bg0)" stroke-width="1"/>`).join('')}`;
+                   ${cumPts.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#a8c0a0" stroke="var(--bg0)" stroke-width="1"/>`).join('')}
+                   ${cumPts.map((p, i) => `<text x="${p.x}" y="${p.y - 8}" text-anchor="middle" font-family="Barlow" font-style="italic" font-size="10" fill="#a8c0a0">${fmt(p.val, 0)}</text>`).join('')}`;
 
   // Bars + labels
   const bars = days.map((d, i) => {
@@ -1004,7 +1154,8 @@ function renderRarCostChart(days) {
   });
   const cumPath = `M ${cumPoints.map(p => `${p.x} ${p.y}`).join(' L ')}`;
   const cumLine = `<path d="${cumPath}" fill="none" stroke="#a8c0a0" stroke-width="2" stroke-dasharray="3 2"/>
-                   ${cumPoints.map(p => `<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="#a8c0a0"/>`).join('')}`;
+                   ${cumPoints.map(p => `<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="#a8c0a0"/>`).join('')}
+                   ${cumPoints.map(p => `<text x="${p.x}" y="${p.y - 8}" text-anchor="middle" font-family="Barlow" font-style="italic" font-size="10" fill="#a8c0a0">$${p.val.toFixed(2)}</text>`).join('')}`;
 
   // Bars
   const bars = days.map((d, i) => {
@@ -1232,7 +1383,9 @@ function render() {
     if (host) {
       // Reuse renderRARView but redirect output into rar-host
       const days = buildRarDays();
+      const insights = buildRarInsights(days);
       host.innerHTML = renderRarConfigBar(days) +
+        renderRarSoWhatCard(insights) +
         '<div class="card"><div class="card-header"><span class="card-title">Daily volume</span><span class="card-subtitle">bcm per shift</span></div>' + renderRarVolumeChart(days) + '</div>' +
         '<div class="card"><div class="card-header"><span class="card-title">Daily cost</span><span class="card-subtitle">$/bcm</span></div>' + renderRarCostChart(days) + '</div>' +
         '<div class="card"><div class="card-header"><span class="card-title">SMU utilisation</span><span class="card-subtitle">excavator + truck avg per shift</span></div>' + renderRarUtilisationChart(days) + '</div>';
