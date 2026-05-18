@@ -340,6 +340,7 @@
       <div class="tab active" data-tab="plan">Plan</div>
       <div class="tab" data-tab="fleet">Fleet Config</div>
       <div class="tab" data-tab="inspection">Inspection</div>
+      <div class="tab" data-tab="help">HELP</div>
       <div class="tab" data-tab="delta">Delta</div>
     </div>
 
@@ -719,6 +720,13 @@
             <span class="field-unit">$ / L AUD</span>
           </div>
         </div>
+        <div class="field">
+          <span class="field-label">Max truck operators</span>
+          <div class="field-input">
+            <input type="number" id="in-max-truck-ops" min="0" max="50" step="1" value="99"/>
+            <span class="field-unit">cap (constrains optimiser & calc)</span>
+          </div>
+        </div>
         <div class="help">When fuel is free-issued, the L/hr burn is still tracked (saved in session for moat / reporting) but does not contribute to the displayed shift cost. Cost reference uses the diesel price regardless.</div>
         <div class="help-block" style="margin-top:8px;">
           <strong style="color:var(--text0);">Per-machine fuel burn (reference)</strong><br>
@@ -795,21 +803,25 @@
         <div class="obs-list" id="obs-list"></div>
       </div>
 
-      <!-- ============ DAILY HELP REPORT (v1.9) ============ -->
+    </div><!-- /tab-inspection -->
+
+    <!-- ============ HELP TAB (v2.1) ============ -->
+    <div class="tab-content" id="tab-help">
+
       <div class="card">
         <div class="card-header">
           <span class="card-title">Daily HELP report</span>
-          <span class="card-subtitle">rolls up to Pit Boss · weekly RAR</span>
+          <span class="card-subtitle">routed to supervisor · escalate to Stevie</span>
         </div>
         <div class="help-block" style="margin-top:0;margin-bottom:12px;padding:8px 10px;background:var(--bg2);border-left:2px solid var(--copperDim);border-radius:0 3px 3px 0;">
-          Drop a quick line into any category as the shift unfolds. Empty categories are fine. <strong>How can I help / What help from other departments</strong> is the most valuable — that's what feeds the leadership ask in Stevie's weekly RAR.
+          Each entry can be sent to a supervisor (Tomas, Craig or Belinda) or left unassigned. Tap <strong>↑ Escalate</strong> on any item you can't resolve at your level — it'll flag up to Stevie in Pit Boss for reconciliation. <strong>How can I help / What help from other departments</strong> is the most valuable category — that's the leadership ask in the weekly RAR.
         </div>
         <div id="help-grid-supe" style="display:grid;grid-template-columns:1fr;gap:10px;">
           <!-- populated by renderHelpEntries() -->
         </div>
       </div>
 
-    </div><!-- /tab-inspection -->
+    </div><!-- /tab-help -->
 
     <!-- ============ DELTA TAB (v2.0) ============ -->
     <div class="tab-content" id="tab-delta">
@@ -1408,6 +1420,8 @@ const STATE = {
   delta_total_vol: 10000,
   delta_units: 'bcm',                 // 'bcm' or 'lcm'
   cost_layers: { fuel: true, contractor: false, owners: false },
+  // v2.0.3 — Max truck operators on shift. If running fewer ops than trucks, extra trucks sit idle.
+  max_truck_operators: 99,            // default high = unconstrained
   // v1.8 — mixed fleet. Each entry: {class: '789', count: 2}. Empty count = class not in mix.
   truck_mix: [
     { class: "793", count: 0 },
@@ -1721,7 +1735,14 @@ function calc() {
   const DD_mix = BB_mix / (1 + s.rehandle);
 
   // Total truck-side throughput (sum across classes) at no-queue cycle
-  const truck_bcm_hr_no_queue = class_metrics.reduce((sum, c) => sum + c.total_throughput, 0);
+  let truck_bcm_hr_no_queue = class_metrics.reduce((sum, c) => sum + c.total_throughput, 0);
+  // v2.0.3 — Operator cap: if mix exceeds available operators, scale throughput pro-rata
+  const _op_cap = (STATE.max_truck_operators != null && STATE.max_truck_operators > 0) ? STATE.max_truck_operators : Infinity;
+  const _op_starved = total_trucks_in_mix > _op_cap;
+  if (_op_starved) {
+    const _ratio = _op_cap / total_trucks_in_mix;
+    truck_bcm_hr_no_queue *= _ratio;
+  }
 
   // Trucks needed for balance against the MIX-aware DD
   // Use the weighted average per-truck throughput; trucks_needed = DD / per_truck_throughput_avg
@@ -1941,6 +1962,8 @@ function calc() {
     truck_mix: s.truck_mix,
     // v1.8.2 — Truck fill metrics
     truck_fill_pct, heap_factor: heap_factor_main, partial_pass, O_int,
+    // v2.0.3 — Operator cap
+    op_starved: _op_starved, max_truck_operators: _op_cap === Infinity ? null : _op_cap,
     // Pareto / loss attribution
     losses: { z_to_bb_loss, bb_to_dd_loss, truck_constrain_loss, exc_op_loss, trk_op_loss, face_loss }
   };
@@ -1967,8 +1990,9 @@ function opLabel(id) { return { lvl2_multi: "Lvl 2 multi", lvl1: "Lvl 1", inexpe
 // =============================================================
 
 // =============================================================
-// v1.9 — HELP entries: categories the supervisor fills in during a shift.
+// v1.9 / v2.1 — HELP entries: categories the supervisor fills in during a shift.
 // Rolls into session.inspection.help_entries on save and into raw_json on cloud sync.
+// Entries upgraded from plain string → object { text, assigned_to, status }
 const HELP_CATEGORIES = [
   { id: 'highlights',    label: 'Highlights',           tone: 'green',  hint: 'What went well today' },
   { id: 'lowlights',     label: 'Lowlights',            tone: 'red',    hint: 'What went wrong / hit production' },
@@ -1978,11 +2002,24 @@ const HELP_CATEGORIES = [
   { id: 'actions',       label: 'Arising actions',      tone: 'copperLight', hint: 'Action items with owner / due date' },
 ];
 
+// v2.1 — Supervisor roster for routing
+const SUPERVISORS = [
+  { id: 'tomas',   name: 'Tomas Heikkinen' },
+  { id: 'craig',   name: 'Craig Twaddle' },
+  { id: 'belinda', name: 'Belinda Forshaw' },
+];
+const HELP_STATUSES = ['open', 'resolved', 'escalated'];
+
 function ensureHelpEntries() {
   if (!STATE.inspection) STATE.inspection = {};
   if (!STATE.inspection.help_entries) STATE.inspection.help_entries = {};
   HELP_CATEGORIES.forEach(c => {
     if (!Array.isArray(STATE.inspection.help_entries[c.id])) STATE.inspection.help_entries[c.id] = [];
+    // Migrate any plain-string entries to objects { text, assigned_to, status }
+    STATE.inspection.help_entries[c.id] = STATE.inspection.help_entries[c.id].map(e => {
+      if (typeof e === 'string') return { text: e, assigned_to: null, status: 'open' };
+      return { text: e.text || '', assigned_to: e.assigned_to || null, status: e.status || 'open' };
+    });
   });
 }
 
@@ -1990,20 +2027,49 @@ function renderHelpEntries() {
   ensureHelpEntries();
   const grid = document.getElementById('help-grid-supe');
   if (!grid) return;
+
+  const statusBadge = (status) => {
+    const cfg = {
+      open:      { col: 'var(--text2)',        label: 'open' },
+      resolved:  { col: 'var(--green)',        label: '✓ resolved' },
+      escalated: { col: 'var(--ochre)',        label: '↑ escalated' },
+    }[status] || { col: 'var(--text2)', label: status };
+    return `<span style="color:${cfg.col};font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.06em;font-size:10px;font-weight:600;">${cfg.label}</span>`;
+  };
+
+  const supOptions = (selected) => {
+    const opts = [`<option value="">— unassigned —</option>`];
+    SUPERVISORS.forEach(s => {
+      opts.push(`<option value="${s.id}" ${selected === s.id ? 'selected' : ''}>${s.name}</option>`);
+    });
+    return opts.join('');
+  };
+
   grid.innerHTML = HELP_CATEGORIES.map(c => {
     const entries = STATE.inspection.help_entries[c.id] || [];
     const tone = c.tone;
     const borderColor = ({ green: 'var(--green)', red: 'var(--red)', ochre: 'var(--ochre)', copper: 'var(--copper)', blue: 'var(--blue)', copperLight: 'var(--copperLight)' })[tone] || 'var(--border)';
-    const titleColor = borderColor;
     return `<div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${borderColor};padding:10px 12px;border-radius:0 3px 3px 0;">
-      <div style="font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:0.10em;font-weight:600;font-size:12px;color:${titleColor};display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:0.10em;font-weight:600;font-size:12px;color:${borderColor};display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;">
         <span>${c.label}</span>
         <span style="font-family:'Barlow',sans-serif;color:var(--text2);font-size:10.5px;font-weight:400;">${c.hint}</span>
       </div>
       <ul style="list-style:none;padding:0;margin:0;font-family:'Barlow',sans-serif;font-size:13px;color:var(--text0);">
-        ${entries.map((entry, i) => `<li style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:4px 0;border-bottom:1px dashed var(--border);">
-          <span style="line-height:1.4;">▸ ${escapeHtml(entry)}</span>
-          <button data-help-del="${c.id}:${i}" type="button" style="background:transparent;border:none;color:var(--text2);font-size:14px;cursor:pointer;padding:0 4px;">×</button>
+        ${entries.map((entry, i) => `<li style="display:grid;grid-template-columns:1fr;gap:4px;padding:6px 0;border-bottom:1px dashed var(--border);">
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;">
+            <span style="line-height:1.4;">▸ ${escapeHtml(entry.text)} <span style="margin-left:8px;">${statusBadge(entry.status)}</span></span>
+            <button data-help-del="${c.id}:${i}" type="button" style="background:transparent;border:none;color:var(--text2);font-size:14px;cursor:pointer;padding:0 4px;">×</button>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--text2);">
+            <span>Send to:</span>
+            <select data-help-assign="${c.id}:${i}" style="padding:2px 4px;background:var(--bg1);border:1px solid var(--border);color:var(--text0);font-family:'Barlow',sans-serif;font-size:11px;border-radius:2px;">
+              ${supOptions(entry.assigned_to)}
+            </select>
+            <select data-help-status="${c.id}:${i}" style="padding:2px 4px;background:var(--bg1);border:1px solid var(--border);color:var(--text0);font-family:'Barlow',sans-serif;font-size:11px;border-radius:2px;">
+              ${HELP_STATUSES.map(s => `<option value="${s}" ${entry.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+            </select>
+            ${entry.status !== 'escalated' ? `<button data-help-escalate="${c.id}:${i}" type="button" style="background:transparent;border:1px solid var(--ochre);color:var(--ochre);font-family:'Barlow Condensed';font-size:10px;text-transform:uppercase;letter-spacing:0.06em;padding:2px 8px;cursor:pointer;border-radius:2px;">↑ Escalate</button>` : ''}
+          </div>
         </li>`).join('')}
       </ul>
       <div style="display:flex;gap:6px;margin-top:6px;">
@@ -2012,7 +2078,8 @@ function renderHelpEntries() {
       </div>
     </div>`;
   }).join('');
-  // Wire add buttons
+
+  // Wire Add buttons
   grid.querySelectorAll('button[data-help-add]').forEach(btn => {
     btn.addEventListener('click', () => {
       const cat = btn.dataset.helpAdd;
@@ -2020,13 +2087,13 @@ function renderHelpEntries() {
       if (!input) return;
       const text = (input.value || '').trim();
       if (!text) return;
-      STATE.inspection.help_entries[cat].push(text);
+      STATE.inspection.help_entries[cat].push({ text, assigned_to: null, status: 'open' });
       input.value = '';
       persistState();
       renderHelpEntries();
     });
   });
-  // Wire Enter key on inputs
+  // Enter key
   grid.querySelectorAll('input[data-help-input]').forEach(input => {
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -2037,14 +2104,44 @@ function renderHelpEntries() {
       }
     });
   });
-  // Wire delete buttons
+  // Delete
   grid.querySelectorAll('button[data-help-del]').forEach(btn => {
     btn.addEventListener('click', () => {
       const [cat, idx] = btn.dataset.helpDel.split(':');
-      const i = parseInt(idx);
-      STATE.inspection.help_entries[cat].splice(i, 1);
+      STATE.inspection.help_entries[cat].splice(parseInt(idx), 1);
       persistState();
       renderHelpEntries();
+    });
+  });
+  // Assignee
+  grid.querySelectorAll('select[data-help-assign]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const [cat, idx] = sel.dataset.helpAssign.split(':');
+      const entry = STATE.inspection.help_entries[cat][parseInt(idx)];
+      if (entry) entry.assigned_to = sel.value || null;
+      persistState();
+      renderHelpEntries();
+    });
+  });
+  // Status
+  grid.querySelectorAll('select[data-help-status]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const [cat, idx] = sel.dataset.helpStatus.split(':');
+      const entry = STATE.inspection.help_entries[cat][parseInt(idx)];
+      if (entry) entry.status = sel.value;
+      persistState();
+      renderHelpEntries();
+    });
+  });
+  // Escalate
+  grid.querySelectorAll('button[data-help-escalate]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const [cat, idx] = btn.dataset.helpEscalate.split(':');
+      const entry = STATE.inspection.help_entries[cat][parseInt(idx)];
+      if (entry) entry.status = 'escalated';
+      persistState();
+      renderHelpEntries();
+      toast('Item escalated — will surface to Stevie in Pit Boss');
     });
   });
 }
@@ -2796,6 +2893,9 @@ function findOptimalConfig() {
 
     allMixes.forEach(mix => {
       if (mix.length === 0) return;
+      // v2.0.3 — Honour max truck operator cap
+      const totalT = mix.reduce((s, m) => s + m.count, 0);
+      if (STATE.max_truck_operators != null && totalT > STATE.max_truck_operators) return;
       // Honour per-class max availability (mix could exceed availability)
       const exceeded = mix.some(m => m.count > (STATE.equipment_availability.truck_classes[m.class]?.count || 0));
       if (exceeded) return;
@@ -3073,7 +3173,7 @@ function applyDeltaCostLayers(r) {
 
 // v2.0.1 — calcOptimised: apply scope overrides, run optimiser, calc with top-ranked fleet
 function calcOptimised(overrides) {
-  const backupKeys = ['excavator', 'truck_mix', 'distance_km', 'grade_pct', 'road', 'dump', 'dump_width', 'material', 'dig_condition'];
+  const backupKeys = ['excavator', 'truck_mix', 'distance_km', 'grade_pct', 'road', 'dump', 'dump_width', 'material', 'dig_condition', 'ramps', 'intersections', 'rehandle', 'fill_factor'];
   const backup = {};
   backupKeys.forEach(k => { backup[k] = JSON.parse(JSON.stringify(STATE[k] !== undefined ? STATE[k] : null)); });
   try {
@@ -3231,32 +3331,36 @@ function renderDeltaResults() {
     const col = d > 5 ? 'var(--red)' : d < -5 ? 'var(--green)' : 'var(--text2)';
     return `<span style="color:${col};font-size:10.5px;">${sign}${d.toFixed(0)}%</span>`;
   };
+  // v2.0.3 — Plan B optimised gets dual baseline: vs Plan A planned + vs Plan A optimised
+  const fmtPctDual = (basePlanned, baseOpt, val) => {
+    return `${fmtPctVs(basePlanned, val)} <span style="color:var(--text2);font-size:9.5px;">/opt: ${fmtPctVs(baseOpt, val)}</span>`;
+  };
 
   const rows = [
     ['Fleet', fleetStr(rA), fleetStr(rAo), fleetStr(rBo)],
     ['Production / shift',
       `${fmt(rA.production_bcm, 0)} bcm`,
       `${fmt(rAo.production_bcm, 0)} bcm ${fmtPctVs(rA.production_bcm, rAo.production_bcm)}`,
-      `${fmt(rBo.production_bcm, 0)} bcm ${fmtPctVs(rA.production_bcm, rBo.production_bcm)}`],
+      `${fmt(rBo.production_bcm, 0)} bcm ${fmtPctDual(rA.production_bcm, rAo.production_bcm, rBo.production_bcm)}`],
     ['bcm / SMU',
       `${fmt(rA.bcm_per_smu, 0)}`,
       `${fmt(rAo.bcm_per_smu, 0)} ${fmtPctVs(rA.bcm_per_smu, rAo.bcm_per_smu)}`,
-      `${fmt(rBo.bcm_per_smu, 0)} ${fmtPctVs(rA.bcm_per_smu, rBo.bcm_per_smu)}`],
+      `${fmt(rBo.bcm_per_smu, 0)} ${fmtPctDual(rA.bcm_per_smu, rAo.bcm_per_smu, rBo.bcm_per_smu)}`],
     ['Cost / bcm',
       fmtMoney(cA.cost_per_bcm, 2),
       `${fmtMoney(cAo.cost_per_bcm, 2)} ${fmtPctVs(cA.cost_per_bcm, cAo.cost_per_bcm)}`,
-      `${fmtMoney(cBo.cost_per_bcm, 2)} ${fmtPctVs(cA.cost_per_bcm, cBo.cost_per_bcm)}`],
+      `${fmtMoney(cBo.cost_per_bcm, 2)} ${fmtPctDual(cA.cost_per_bcm, cAo.cost_per_bcm, cBo.cost_per_bcm)}`],
     ['Bottleneck', bottleneckLabel(rA.bottleneck), bottleneckLabel(rAo.bottleneck), bottleneckLabel(rBo.bottleneck)],
     ['Match factor', rA.match_factor.toFixed(2), rAo.match_factor.toFixed(2), rBo.match_factor.toFixed(2)],
     ['Cycle / truck', fmtTime(rA.cycle.t_cycle), fmtTime(rAo.cycle.t_cycle), fmtTime(rBo.cycle.t_cycle)],
     [`Shifts for ${fmt(totalVol, 0)} ${STATE.delta_units.toUpperCase()}`,
       sA.toFixed(1),
       `${sAo.toFixed(1)} ${fmtPctVs(sA, sAo)}`,
-      `${sBo.toFixed(1)} ${fmtPctVs(sA, sBo)}`],
+      `${sBo.toFixed(1)} ${fmtPctDual(sA, sAo, sBo)}`],
     ['<strong>Total budget</strong>',
       `<strong>${fmtMoney(bA, 0)}</strong>`,
       `<strong>${fmtMoney(bAo, 0)} ${fmtPctVs(bA, bAo)}</strong>`,
-      `<strong>${fmtMoney(bBo, 0)} ${fmtPctVs(bA, bBo)}</strong>`],
+      `<strong>${fmtMoney(bBo, 0)} ${fmtPctDual(bA, bAo, bBo)}</strong>`],
   ];
 
   tbl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-family:'Barlow',sans-serif;font-size:13px;">
@@ -4295,6 +4399,12 @@ function bindFleetConfigInputs() {
   const dp = document.getElementById('in-diesel-price');
   dp.value = STATE.diesel_price;
   dp.addEventListener('input', () => { STATE.diesel_price = parseFloat(dp.value) || 0; render(); });
+  // v2.0.3 — Max truck operators (cap)
+  const mto = document.getElementById('in-max-truck-ops');
+  if (mto) {
+    mto.value = STATE.max_truck_operators != null ? STATE.max_truck_operators : 99;
+    mto.addEventListener('input', () => { STATE.max_truck_operators = parseInt(mto.value) || 99; render(); });
+  }
   // Shift total hours
   const sh = document.getElementById('in-shift-total-hrs');
   sh.value = STATE.shift_total_hours;
