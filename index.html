@@ -340,6 +340,7 @@
       <div class="tab active" data-tab="plan">Plan</div>
       <div class="tab" data-tab="fleet">Fleet Config</div>
       <div class="tab" data-tab="inspection">Inspection</div>
+      <div class="tab" data-tab="delta">Delta</div>
     </div>
 
     <!-- ============ PLAN TAB ============ -->
@@ -809,6 +810,90 @@
       </div>
 
     </div><!-- /tab-inspection -->
+
+    <!-- ============ DELTA TAB (v2.0) ============ -->
+    <div class="tab-content" id="tab-delta">
+
+      <!-- Header bar -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Delta — Plan A vs Plan B</span>
+          <span class="card-subtitle">side-by-side scenario compare</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:center;">
+          <div>
+            <label style="display:block;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:11px;color:var(--text2);margin-bottom:4px;">Total volume to move</label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="number" id="delta-total-vol" min="0" step="100" value="10000" style="flex:1;padding:8px;background:var(--bg1);border:1px solid var(--border);color:var(--text0);font-family:'DM Mono',monospace;border-radius:3px;"/>
+              <select id="delta-units" style="padding:8px;background:var(--bg1);border:1px solid var(--border);color:var(--text0);font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:11px;border-radius:3px;">
+                <option value="bcm" selected>BCM</option>
+                <option value="lcm">LCM</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style="display:block;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:11px;color:var(--text2);margin-bottom:4px;">Cost layers</label>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+              <label style="display:flex;align-items:center;gap:4px;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:11px;color:var(--text1);cursor:pointer;"><input type="checkbox" id="delta-layer-fuel" checked/> Fuel</label>
+              <label style="display:flex;align-items:center;gap:4px;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:11px;color:var(--text1);cursor:pointer;"><input type="checkbox" id="delta-layer-contractor"/> Contractor OH</label>
+              <label style="display:flex;align-items:center;gap:4px;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:11px;color:var(--text1);cursor:pointer;"><input type="checkbox" id="delta-layer-owners"/> Owners</label>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <button id="delta-sync-a" class="primary" style="padding:8px 16px;">↻ Sync Plan A from Plan tab</button>
+            <button id="delta-copy-b" style="padding:8px 16px;margin-left:6px;">→ Plan B = Plan A</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Headline summary -->
+      <div class="card" id="delta-headline-card">
+        <div id="delta-headline" style="font-family:'Barlow',sans-serif;font-size:14px;color:var(--text0);line-height:1.5;">
+          <span style="color:var(--text2);">Adjust Plan B below to see the comparison.</span>
+        </div>
+      </div>
+
+      <!-- Side-by-side input editor -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Scenario inputs</span>
+          <span class="card-subtitle">Plan A mirrors Plan tab · edit Plan B here</span>
+        </div>
+        <div id="delta-inputs-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <!-- populated by renderDeltaInputs() -->
+        </div>
+      </div>
+
+      <!-- Results table -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Results</span>
+          <span class="card-subtitle">cost layers applied</span>
+        </div>
+        <div id="delta-results-table">
+          <!-- populated by renderDeltaResults() -->
+        </div>
+      </div>
+
+      <!-- Visual: stacked bar cost comparison -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Cost composition</span>
+          <span class="card-subtitle">where the $ are spent per shift</span>
+        </div>
+        <div id="delta-stacked-bar"><!-- SVG --></div>
+      </div>
+
+      <!-- Visual: time-in-motion comparison -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Cycle phase comparison</span>
+          <span class="card-subtitle">where the minutes go per truck cycle</span>
+        </div>
+        <div id="delta-timeline-compare"><!-- SVG --></div>
+      </div>
+
+    </div><!-- /tab-delta -->
 
   </section>
 
@@ -1318,6 +1403,11 @@ const STATE = {
   // Trucks
   truck_class: "785",  // legacy single-class field (preserved for backward compat)
   truck_count: 4,      // legacy total field (computed from truck_mix below if mix is used)
+  // v2.0 — Delta tab state
+  planB_overrides: {},                // partial state overrides for Plan B
+  delta_total_vol: 10000,
+  delta_units: 'bcm',                 // 'bcm' or 'lcm'
+  cost_layers: { fuel: true, contractor: false, owners: false },
   // v1.8 — mixed fleet. Each entry: {class: '789', count: 2}. Empty count = class not in mix.
   truck_mix: [
     { class: "793", count: 0 },
@@ -2950,10 +3040,383 @@ function renderTruckMix() {
   }
 }
 
+// v2.0 — Delta helpers: compute calc() result for a state with overrides applied
+function calcWithOverrides(overrides) {
+  if (!overrides || Object.keys(overrides).length === 0) return calc();
+  // Backup keys we may touch
+  const keys = Object.keys(overrides);
+  const backup = {};
+  keys.forEach(k => { backup[k] = JSON.parse(JSON.stringify(STATE[k] !== undefined ? STATE[k] : null)); });
+  try {
+    keys.forEach(k => { STATE[k] = JSON.parse(JSON.stringify(overrides[k])); });
+    return calc();
+  } finally {
+    keys.forEach(k => { STATE[k] = backup[k]; });
+  }
+}
+
+// v2.0.1 — Apply cost layers: Contractor OH and Owners are flat % of DIRECT (excl fuel)
+function applyDeltaCostLayers(r) {
+  const L = STATE.cost_layers || { fuel: true, contractor: false, owners: false };
+  const direct = (r.cost_primary || 0) + (r.cost_ancillaries || 0) + (r.cost_labour || 0);
+  const fuel = L.fuel ? (r.cost_fuel || 0) : 0;
+  const contractor = L.contractor ? direct * 0.20 : 0;  // 20% of direct (excl fuel)
+  const owners = L.owners ? direct * 0.08 : 0;          // 8% of direct (excl fuel)
+  const total = direct + fuel + contractor + owners;
+  return {
+    direct, fuel, contractor, owners, total,
+    cost_per_bcm: r.production_bcm > 0 ? total / r.production_bcm : 0,
+    production_bcm: r.production_bcm,
+  };
+}
+
+// v2.0.1 — calcOptimised: apply scope overrides, run optimiser, calc with top-ranked fleet
+function calcOptimised(overrides) {
+  const backupKeys = ['excavator', 'truck_mix', 'distance_km', 'grade_pct', 'road', 'dump', 'dump_width', 'material', 'dig_condition'];
+  const backup = {};
+  backupKeys.forEach(k => { backup[k] = JSON.parse(JSON.stringify(STATE[k] !== undefined ? STATE[k] : null)); });
+  try {
+    Object.keys(overrides || {}).forEach(k => {
+      STATE[k] = JSON.parse(JSON.stringify(overrides[k]));
+    });
+    let opts = [];
+    try { opts = findOptimalConfig(); } catch (e) { console.warn('optimiser err', e); }
+    if (opts && opts.length > 0) {
+      const top = opts[0];
+      STATE.excavator = top.excId;
+      STATE.truck_mix = JSON.parse(JSON.stringify(top.mix));
+    }
+    const r = calc();
+    // Stash the recommended fleet onto the result for display
+    if (opts && opts.length > 0) {
+      r._optimised_fleet = opts[0].mixStr || opts[0].mix.map(m => `${m.count}×${m.class}`).join(' + ');
+      r._optimised_exc = opts[0].excId;
+    }
+    return r;
+  } finally {
+    backupKeys.forEach(k => { STATE[k] = backup[k]; });
+  }
+}
+
+// v2.0.1 — Plan A mirror (planned) + Plan B scope editor (fleet is optimiser-driven)
+function renderDeltaInputs() {
+  const grid = document.getElementById('delta-inputs-grid');
+  if (!grid) return;
+  const a = STATE;
+  const b = { ...a, ...STATE.planB_overrides };
+
+  const matLabel = (id) => (MATERIAL_TYPES[id]?.name || id);
+  const roadLabel = (id) => (ROAD_CONDITIONS[id]?.label || id);
+  const dumpLabel = (id) => (DUMP_TYPES[id]?.label || id);
+  const digLabel = (id) => (DIG_CONDITIONS[id]?.name || id);
+  const excLabel = (id) => (EXCAVATORS[id]?.name || id);
+  const mixStr = (mix) => (mix || []).filter(m => m.count > 0).map(m => `${m.count}×${m.class}`).join(' + ') || '—';
+
+  const aColumn = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--copperDim);padding:12px 14px;border-radius:0 3px 3px 0;">
+      <div style="font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-weight:600;font-size:12px;color:var(--copperDim);margin-bottom:10px;">Plan A · planned (from Plan tab)</div>
+      ${deltaRowDisplay('Material', matLabel(a.material))}
+      ${deltaRowDisplay('Excavator', excLabel(a.excavator))}
+      ${deltaRowDisplay('Truck mix', mixStr(a.truck_mix))}
+      ${deltaRowDisplay('Distance', a.distance_km + ' km')}
+      ${deltaRowDisplay('Grade', a.grade_pct + ' %')}
+      ${deltaRowDisplay('Road', roadLabel(a.road))}
+      ${deltaRowDisplay('Dump type', dumpLabel(a.dump))}
+      ${deltaRowDisplay('Dig condition', digLabel(a.dig_condition))}
+    </div>
+  `;
+
+  // Plan B: scope-only editor (fleet decided by optimiser)
+  const bMaterialOpts = Object.entries(MATERIAL_TYPES).map(([id, m]) => `<option value="${id}" ${b.material === id ? 'selected' : ''}>${m.name}</option>`).join('');
+  const bRoadOpts = Object.entries(ROAD_CONDITIONS).map(([id, r]) => `<option value="${id}" ${b.road === id ? 'selected' : ''}>${r.label}</option>`).join('');
+  const bDumpOpts = Object.entries(DUMP_TYPES).map(([id, d]) => `<option value="${id}" ${b.dump === id ? 'selected' : ''}>${d.label}</option>`).join('');
+  const bDigOpts = Object.entries(DIG_CONDITIONS).map(([id, d]) => `<option value="${id}" ${b.dig_condition === id ? 'selected' : ''}>${d.name}</option>`).join('');
+
+  const bColumn = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--copperLight);padding:12px 14px;border-radius:0 3px 3px 0;">
+      <div style="font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-weight:600;font-size:12px;color:var(--copperLight);margin-bottom:10px;">Plan B · scope (fleet is optimised)</div>
+      ${deltaRowEdit('Material', `<select data-deltab="material">${bMaterialOpts}</select>`)}
+      ${deltaRowEdit('Distance', `<input type="number" min="0" step="0.1" value="${b.distance_km}" data-deltab="distance_km"/> km`)}
+      ${deltaRowEdit('Grade', `<input type="number" step="0.1" value="${b.grade_pct}" data-deltab="grade_pct"/> %`)}
+      ${deltaRowEdit('Road', `<select data-deltab="road">${bRoadOpts}</select>`)}
+      ${deltaRowEdit('Dump type', `<select data-deltab="dump">${bDumpOpts}</select>`)}
+      ${deltaRowEdit('Dig condition', `<select data-deltab="dig_condition">${bDigOpts}</select>`)}
+      <div style="margin-top:8px;font-family:'Barlow';font-size:11px;color:var(--text2);font-style:italic;">Fleet (excavator + truck mix) is decided by the optimiser using current Fleet Config availability toggles.</div>
+    </div>
+  `;
+
+  grid.innerHTML = aColumn + bColumn;
+  grid.querySelectorAll('[data-deltab]').forEach(el => {
+    const key = el.dataset.deltab;
+    el.addEventListener('change', () => {
+      let val = el.value;
+      if (['distance_km', 'grade_pct'].includes(key)) val = parseFloat(val) || 0;
+      STATE.planB_overrides[key] = val;
+      persistState();
+      renderDelta();
+    });
+  });
+}
+
+function deltaRowDisplay(label, value) {
+  return `<div style="display:grid;grid-template-columns:110px 1fr;gap:8px;align-items:center;padding:4px 0;border-bottom:1px dashed var(--border);">
+    <span style="font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.06em;font-size:10.5px;color:var(--text2);">${label}</span>
+    <span style="font-family:'Barlow';font-size:12.5px;color:var(--text0);">${value}</span>
+  </div>`;
+}
+function deltaRowEdit(label, control) {
+  return `<div style="display:grid;grid-template-columns:110px 1fr;gap:8px;align-items:center;padding:4px 0;border-bottom:1px dashed var(--border);">
+    <span style="font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.06em;font-size:10.5px;color:var(--text2);">${label}</span>
+    <span style="font-family:'Barlow';font-size:12.5px;color:var(--text0);">${control}</span>
+  </div>`;
+}
+
+function renderDeltaResults() {
+  const tbl = document.getElementById('delta-results-table');
+  if (!tbl) return;
+  const rA  = calc();                                       // Plan A as planned
+  const rAo = calcOptimised({});                            // Plan A scope, optimal fleet
+  const rBo = calcOptimised(STATE.planB_overrides || {});   // Plan B scope, optimal fleet
+  const cA  = applyDeltaCostLayers(rA);
+  const cAo = applyDeltaCostLayers(rAo);
+  const cBo = applyDeltaCostLayers(rBo);
+
+  const totalVol = parseFloat(STATE.delta_total_vol) || 0;
+  const swellRatio = 1 + (STATE.swell || 0.25);
+  const totalBcm = STATE.delta_units === 'lcm' ? totalVol / swellRatio : totalVol;
+  const shifts = (r) => r.production_bcm > 0 ? totalBcm / r.production_bcm : 0;
+  const budget = (c) => c.cost_per_bcm * totalBcm;
+
+  const sA  = shifts(rA),  sAo = shifts(rAo),  sBo = shifts(rBo);
+  const bA  = budget(cA),  bAo = budget(cAo),  bBo = budget(cBo);
+
+  const mixStr = (mix) => (mix || []).filter(m => m.count > 0).map(m => `${m.count}×${m.class}`).join(' + ') || '—';
+  const fleetStr = (r) => r._optimised_fleet ? `${r._optimised_exc} + ${r._optimised_fleet}` : `${STATE.excavator} + ${mixStr(STATE.truck_mix)}`;
+
+  const fmtPctVs = (base, val) => {
+    if (!isFinite(base) || base === 0) return '';
+    const d = (val - base) / base * 100;
+    const sign = d >= 0 ? '+' : '';
+    const col = d > 5 ? 'var(--red)' : d < -5 ? 'var(--green)' : 'var(--text2)';
+    return `<span style="color:${col};font-size:10.5px;">${sign}${d.toFixed(0)}%</span>`;
+  };
+
+  const rows = [
+    ['Fleet', fleetStr(rA), fleetStr(rAo), fleetStr(rBo)],
+    ['Production / shift',
+      `${fmt(rA.production_bcm, 0)} bcm`,
+      `${fmt(rAo.production_bcm, 0)} bcm ${fmtPctVs(rA.production_bcm, rAo.production_bcm)}`,
+      `${fmt(rBo.production_bcm, 0)} bcm ${fmtPctVs(rA.production_bcm, rBo.production_bcm)}`],
+    ['bcm / SMU',
+      `${fmt(rA.bcm_per_smu, 0)}`,
+      `${fmt(rAo.bcm_per_smu, 0)} ${fmtPctVs(rA.bcm_per_smu, rAo.bcm_per_smu)}`,
+      `${fmt(rBo.bcm_per_smu, 0)} ${fmtPctVs(rA.bcm_per_smu, rBo.bcm_per_smu)}`],
+    ['Cost / bcm',
+      fmtMoney(cA.cost_per_bcm, 2),
+      `${fmtMoney(cAo.cost_per_bcm, 2)} ${fmtPctVs(cA.cost_per_bcm, cAo.cost_per_bcm)}`,
+      `${fmtMoney(cBo.cost_per_bcm, 2)} ${fmtPctVs(cA.cost_per_bcm, cBo.cost_per_bcm)}`],
+    ['Bottleneck', bottleneckLabel(rA.bottleneck), bottleneckLabel(rAo.bottleneck), bottleneckLabel(rBo.bottleneck)],
+    ['Match factor', rA.match_factor.toFixed(2), rAo.match_factor.toFixed(2), rBo.match_factor.toFixed(2)],
+    ['Cycle / truck', fmtTime(rA.cycle.t_cycle), fmtTime(rAo.cycle.t_cycle), fmtTime(rBo.cycle.t_cycle)],
+    [`Shifts for ${fmt(totalVol, 0)} ${STATE.delta_units.toUpperCase()}`,
+      sA.toFixed(1),
+      `${sAo.toFixed(1)} ${fmtPctVs(sA, sAo)}`,
+      `${sBo.toFixed(1)} ${fmtPctVs(sA, sBo)}`],
+    ['<strong>Total budget</strong>',
+      `<strong>${fmtMoney(bA, 0)}</strong>`,
+      `<strong>${fmtMoney(bAo, 0)} ${fmtPctVs(bA, bAo)}</strong>`,
+      `<strong>${fmtMoney(bBo, 0)} ${fmtPctVs(bA, bBo)}</strong>`],
+  ];
+
+  tbl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-family:'Barlow',sans-serif;font-size:13px;">
+    <thead>
+      <tr style="border-bottom:1px solid var(--copper);">
+        <th style="text-align:left;color:var(--text2);padding:6px 8px;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:10px;">Metric</th>
+        <th style="text-align:right;color:var(--copperDim);padding:6px 8px;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:10px;">Plan A · planned</th>
+        <th style="text-align:right;color:var(--copperLight);padding:6px 8px;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:10px;">Plan A · optimised</th>
+        <th style="text-align:right;color:var(--green);padding:6px 8px;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.08em;font-size:10px;">Plan B · optimised</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map((r, i) => `<tr style="border-bottom:1px solid var(--border);${i === 0 ? 'background:var(--bg1);' : ''}">
+        <td style="padding:6px 8px;color:var(--text1);">${r[0]}</td>
+        <td style="padding:6px 8px;text-align:right;font-family:'DM Mono',monospace;color:var(--text0);font-size:${i === 0 ? '11px' : '12.5px'};">${r[1]}</td>
+        <td style="padding:6px 8px;text-align:right;font-family:'DM Mono',monospace;color:var(--text0);font-size:${i === 0 ? '11px' : '12.5px'};">${r[2]}</td>
+        <td style="padding:6px 8px;text-align:right;font-family:'DM Mono',monospace;color:var(--text0);font-size:${i === 0 ? '11px' : '12.5px'};">${r[3]}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+function renderDeltaStackedBar() {
+  const host = document.getElementById('delta-stacked-bar');
+  if (!host) return;
+  const rA  = calc();
+  const rAo = calcOptimised({});
+  const rBo = calcOptimised(STATE.planB_overrides || {});
+  const cA  = applyDeltaCostLayers(rA);
+  const cAo = applyDeltaCostLayers(rAo);
+  const cBo = applyDeltaCostLayers(rBo);
+  const maxTotal = Math.max(cA.total, cAo.total, cBo.total, 1);
+
+  const stack = (c, label, color) => {
+    const segments = [
+      { name: 'Direct', val: c.direct, col: 'var(--copperDim)' },
+      { name: 'Fuel', val: c.fuel, col: '#c2a06a' },
+      { name: 'Contractor', val: c.contractor, col: '#7a8b6a' },
+      { name: 'Owners', val: c.owners, col: '#6a7a8b' },
+    ].filter(s => s.val > 0);
+    const totalW = (c.total / maxTotal) * 100;
+    let cursor = 0;
+    const bars = segments.map(s => {
+      const w = (s.val / c.total) * totalW;
+      const left = cursor;
+      cursor += w;
+      return `<rect x="${left}%" y="0" width="${w}%" height="34" fill="${s.col}" stroke="var(--bg0)" stroke-width="1"/>
+        ${w > 8 ? `<text x="${left + w/2}%" y="22" text-anchor="middle" font-family="Barlow Condensed" font-size="11" font-weight="600" fill="white">${fmtMoney(s.val, 0)}</text>` : ''}`;
+    }).join('');
+    return `<div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:11px;color:${color};margin-bottom:4px;">
+        <span>${label}</span>
+        <span>${fmtMoney(c.total, 0)} per shift</span>
+      </div>
+      <svg width="100%" height="34" style="display:block;">${bars}</svg>
+    </div>`;
+  };
+
+  host.innerHTML = stack(cA, 'Plan A · planned', 'var(--copperDim)') +
+                   stack(cAo, 'Plan A · optimised', 'var(--copperLight)') +
+                   stack(cBo, 'Plan B · optimised', 'var(--green)') + `
+    <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:8px;font-family:'Barlow';font-size:11px;color:var(--text2);">
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--copperDim);margin-right:4px;"></span>Direct (primary + ancillaries + labour)</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:#c2a06a;margin-right:4px;"></span>Fuel</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:#7a8b6a;margin-right:4px;"></span>Contractor OH (20% of direct)</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:#6a7a8b;margin-right:4px;"></span>Owners (8% of direct)</span>
+    </div>`;
+}
+
+function renderDeltaTimelineCompare() {
+  const host = document.getElementById('delta-timeline-compare');
+  if (!host) return;
+  const rA  = calc();
+  const rAo = calcOptimised({});
+  const rBo = calcOptimised(STATE.planB_overrides || {});
+  const cycA  = rA.cycle, cycAo = rAo.cycle, cycBo = rBo.cycle;
+  const PHASE_DEFS = [
+    { id: 'spot',  label: 'Spot',         col: '#8a7a3a', get: (c) => c.t_spot },
+    { id: 'load',  label: 'Load',         col: '#c8833a', get: (c) => c.t_load },
+    { id: 'haulL', label: 'Haul Loaded',  col: '#e8a855', get: (c) => c.t_haul_loaded + c.t_ramp_loaded + c.t_intersection / 2 },
+    { id: 'dump',  label: 'Dump',         col: '#a06a30', get: (c) => c.t_dump },
+    { id: 'haulE', label: 'Haul Empty',   col: '#b8884a', get: (c) => c.t_haul_empty + c.t_ramp_empty + c.t_intersection / 2 },
+    { id: 'queue', label: 'Queue',        col: '#6a4820', get: (c) => c.t_queue },
+  ];
+  const phasesFor = (cyc) => PHASE_DEFS.map(p => ({ ...p, val: p.get(cyc) }));
+  const phA  = phasesFor(cycA);
+  const phAo = phasesFor(cycAo);
+  const phBo = phasesFor(cycBo);
+  const totA  = phA .reduce((s, p) => s + p.val, 0);
+  const totAo = phAo.reduce((s, p) => s + p.val, 0);
+  const totBo = phBo.reduce((s, p) => s + p.val, 0);
+  const max = Math.max(totA, totAo, totBo, 0.01);
+
+  const bar = (label, color, ph, total) => {
+    let cursor = 0;
+    const totalWPct = (total / max) * 100;
+    const segs = ph.map(p => {
+      const w = (p.val / total) * totalWPct;
+      const seg = `<rect x="${cursor}%" y="0" width="${w}%" height="34" fill="${p.col}" stroke="var(--bg0)" stroke-width="1"/>
+        ${w > 10 ? `<text x="${cursor + w/2}%" y="22" text-anchor="middle" font-family="DM Mono" font-size="10" fill="white">${fmtTime(p.val)}</text>` : ''}`;
+      cursor += w;
+      return seg;
+    }).join('');
+    return `<div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:0.10em;font-size:11px;color:${color};margin-bottom:4px;">
+        <span>${label}</span>
+        <span>total ${fmtTime(total)} per cycle</span>
+      </div>
+      <svg width="100%" height="34" style="display:block;">${segs}</svg>
+    </div>`;
+  };
+
+  host.innerHTML = bar('Plan A · planned', 'var(--copperDim)', phA, totA) +
+                   bar('Plan A · optimised', 'var(--copperLight)', phAo, totAo) +
+                   bar('Plan B · optimised', 'var(--green)', phBo, totBo) + `
+    <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:8px;font-family:'Barlow';font-size:11px;color:var(--text2);">
+      ${PHASE_DEFS.map(p => `<span><span style="display:inline-block;width:10px;height:10px;background:${p.col};margin-right:4px;"></span>${p.label}</span>`).join('')}
+    </div>`;
+}
+
+function renderDeltaHeadline() {
+  const host = document.getElementById('delta-headline');
+  if (!host) return;
+  const rA  = calc();
+  const rAo = calcOptimised({});
+  const rBo = calcOptimised(STATE.planB_overrides || {});
+  const cA  = applyDeltaCostLayers(rA);
+  const cAo = applyDeltaCostLayers(rAo);
+  const cBo = applyDeltaCostLayers(rBo);
+  const totalVol = parseFloat(STATE.delta_total_vol) || 0;
+  const swellRatio = 1 + (STATE.swell || 0.25);
+  const totalBcm = STATE.delta_units === 'lcm' ? totalVol / swellRatio : totalVol;
+  const shifts = (r) => r.production_bcm > 0 ? totalBcm / r.production_bcm : 0;
+  const budget = (c) => c.cost_per_bcm * totalBcm;
+  const sA  = shifts(rA),  sAo = shifts(rAo),  sBo = shifts(rBo);
+  const bA  = budget(cA),  bAo = budget(cAo),  bBo = budget(cBo);
+
+  // Meat on the bone = saving from Plan A planned → Plan A optimised (same scope, better fleet)
+  const meatSave = bA - bAo;
+  const meatShifts = sA - sAo;
+  const meatPct = bA > 0 ? (meatSave / bA) * 100 : 0;
+  const meatCol = meatSave > 0.01 * bA ? 'var(--green)' : 'var(--text2)';
+
+  // Strategic delta = Plan A optimised → Plan B optimised (different scope, both optimal)
+  const stratCost = bBo - bAo;
+  const stratShifts = sBo - sAo;
+  const stratPct = bAo > 0 ? (stratCost / bAo) * 100 : 0;
+  const stratCol = stratCost > 0 ? 'var(--red)' : stratCost < 0 ? 'var(--green)' : 'var(--text2)';
+
+  // Driver detection for Plan B
+  const drivers = [];
+  const ovr = STATE.planB_overrides || {};
+  if (ovr.distance_km !== undefined && Math.abs(ovr.distance_km - STATE.distance_km) > 0.1) drivers.push(`haul ${ovr.distance_km > STATE.distance_km ? '+' : ''}${(ovr.distance_km - STATE.distance_km).toFixed(1)}km`);
+  if (ovr.grade_pct !== undefined && Math.abs(ovr.grade_pct - STATE.grade_pct) > 0.1) drivers.push(`grade ${ovr.grade_pct > STATE.grade_pct ? '+' : ''}${(ovr.grade_pct - STATE.grade_pct).toFixed(1)}%`);
+  if (ovr.material && ovr.material !== STATE.material) drivers.push('material change');
+  if (ovr.dump && ovr.dump !== STATE.dump) drivers.push('dump type change');
+  if (ovr.road && ovr.road !== STATE.road) drivers.push('road condition change');
+  if (ovr.dig_condition && ovr.dig_condition !== STATE.dig_condition) drivers.push('dig face change');
+  const driversTxt = drivers.length > 0 ? `Plan B scope: ${drivers.join(' + ')}.` : 'Plan B scope identical to Plan A.';
+
+  host.innerHTML = `
+    <div style="font-size:14px;line-height:1.7;">
+      <div><span style="color:var(--copperDim);font-weight:600;">Plan A · planned</span> → ${sA.toFixed(1)} shifts, <strong>${fmtMoney(bA, 0)}</strong>.</div>
+      <div style="margin-top:4px;">
+        <span style="color:var(--copperLight);font-weight:600;">Plan A · optimised</span> →
+        ${meatSave > 0.01 * bA
+          ? `<strong style="color:${meatCol};">save ${fmtMoney(meatSave, 0)} (${meatPct.toFixed(0)}%) and ${meatShifts.toFixed(1)} shifts</strong> with same scope — meat on the bone.`
+          : `same fleet is already near-optimal for this scope.`}
+      </div>
+      <div style="margin-top:4px;">
+        <span style="color:var(--green);font-weight:600;">Plan B · optimised</span> vs Plan A optimised →
+        <strong style="color:${stratCol};">${stratCost >= 0 ? '+' : ''}${fmtMoney(stratCost, 0)} (${stratCost >= 0 ? '+' : ''}${stratPct.toFixed(0)}%) and ${stratShifts >= 0 ? '+' : ''}${stratShifts.toFixed(1)} shifts</strong>.
+      </div>
+      <div style="color:var(--text2);font-size:12px;margin-top:6px;">${driversTxt}</div>
+    </div>
+  `;
+}
+
+function renderDelta() {
+  renderDeltaInputs();
+  renderDeltaResults();
+  renderDeltaStackedBar();
+  renderDeltaTimelineCompare();
+  renderDeltaHeadline();
+}
+
 function render() {
   persistState();   // save on every render — invisible to user
   renderTruckMix();  // v1.8 — keep mix UI in sync
   renderHelpEntries();  // v1.9 — keep HELP cards in sync
+  renderDelta();  // v2.0 — keep Delta tab in sync
   const r = calc();
   const ro = document.getElementById('readout');
 
@@ -3736,6 +4199,7 @@ function setupTabs() {
       STATE.active_tab = target;
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === target));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + target));
+      if (target === 'delta') renderDelta();
     });
   });
 }
@@ -3903,7 +4367,36 @@ function boot() {
   render();
 }
 
-document.addEventListener('DOMContentLoaded', boot);
+// v2.0 — Wire Delta tab controls after DOM ready
+function bindDeltaControls() {
+  const totVol = document.getElementById('delta-total-vol');
+  if (totVol) {
+    totVol.value = STATE.delta_total_vol || 10000;
+    totVol.addEventListener('input', () => { STATE.delta_total_vol = parseFloat(totVol.value) || 0; persistState(); renderDelta(); });
+  }
+  const units = document.getElementById('delta-units');
+  if (units) {
+    units.value = STATE.delta_units || 'bcm';
+    units.addEventListener('change', () => { STATE.delta_units = units.value; persistState(); renderDelta(); });
+  }
+  ['fuel', 'contractor', 'owners'].forEach(k => {
+    const el = document.getElementById('delta-layer-' + k);
+    if (el) {
+      el.checked = !!(STATE.cost_layers && STATE.cost_layers[k]);
+      el.addEventListener('change', () => {
+        if (!STATE.cost_layers) STATE.cost_layers = { fuel: true, contractor: false, owners: false };
+        STATE.cost_layers[k] = el.checked;
+        persistState();
+        renderDelta();
+      });
+    }
+  });
+  const syncA = document.getElementById('delta-sync-a');
+  if (syncA) syncA.addEventListener('click', () => { renderDelta(); toast('Plan A refreshed from Plan tab'); });
+  const copyB = document.getElementById('delta-copy-b');
+  if (copyB) copyB.addEventListener('click', () => { STATE.planB_overrides = {}; persistState(); renderDelta(); toast('Plan B reset to Plan A'); });
+}
+document.addEventListener('DOMContentLoaded', () => { boot(); bindDeltaControls(); });
 </script>
 
 </body>
