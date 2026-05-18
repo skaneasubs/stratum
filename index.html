@@ -1641,8 +1641,18 @@ function calc() {
   // TRUCK CYCLE — canonical Cat Performance Handbook formula:
   // v (km/h) = 273.75 × HP_grade / (GMW kg × TR_decimal), capped at governed v_max.
   // Empty downhill: when grade resistance exceeds rolling resistance (TR negative), truck is retarder-limited at v_max.
-  const tr_loaded = road.rr_pct + s.grade_pct;          // pct: loaded uphill = rr + grade
-  const tr_empty  = road.rr_pct - s.grade_pct;          // pct: empty downhill = rr - grade
+  // v2.3 — Two-segment haul: ramp + flat. Ramp grade applies on ramp section only.
+  const _rampDistKm = ((s.ramps || 0) * (s.ramp_length_m || 0)) / 1000;
+  const _flatDistKm = Math.max(0.001, (s.distance_km || 0) - _rampDistKm);
+  const _rampGrade = s.ramp_grade_pct || 0;
+  const _flatGrade = s.grade_pct || 0;
+  const tr_loaded_ramp = road.rr_pct + _rampGrade;
+  const tr_empty_ramp  = road.rr_pct - _rampGrade;
+  const tr_loaded_flat = road.rr_pct + _flatGrade;
+  const tr_empty_flat  = road.rr_pct - _flatGrade;
+  // Weighted-average legacy aliases for downstream display
+  const tr_loaded = (tr_loaded_ramp * _rampDistKm + tr_loaded_flat * _flatDistKm) / Math.max(0.001, _rampDistKm + _flatDistKm);
+  const tr_empty  = (tr_empty_ramp  * _rampDistKm + tr_empty_flat  * _flatDistKm) / Math.max(0.001, _rampDistKm + _flatDistKm);
   // v2.3 — Compute speeds per segment then time-weight, rather than single-grade speed.
   function _segSpeedLoaded(tr_pct) {
     const dec = Math.max(0.005, tr_pct / 100);
