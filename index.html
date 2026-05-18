@@ -3610,7 +3610,7 @@ function render() {
   const constraintHtml = `<div class="table"><div class="card-title" style="margin-bottom:10px;">Truck payload constraint (LHEX R & S)</div>
     <div class="constraint-bar"><span style="flex:0 0 80px;" class="label">Weight (R)</span><div class="bar-track"><div class="bar-fill ${wcls}" style="width:${wpct * 100}%"></div></div><span class="bar-label">${fmtPct(r.R_weight)}</span></div>
     <div class="constraint-bar"><span style="flex:0 0 80px;" class="label">Volume (S)</span><div class="bar-track"><div class="bar-fill ${vcls}" style="width:${vpct * 100}%"></div></div><span class="bar-label">${fmtPct(r.S_volume)}</span></div>
-    <div class="help-block">Binding constraint: <strong style="color:var(--copperLight);">${r.constraint_type.toUpperCase()}</strong> — passes capped at ${r.O} (weight allows ${r.passes_by_weight}, volume allows ${r.passes_by_volume}). ${r.constraint_type === 'volume' ? 'Lower-density material — truck filling up before payload reached.' : r.constraint_type === 'weight' ? 'High-density material — truck at payload before tray full.' : 'Both constraints hit simultaneously — optimal pass count.'}</div>
+    <div class="help-block">Binding constraint: <strong style="color:var(--copperLight);">${r.constraint_type.toUpperCase()}</strong> — passes capped at ${(r.O || 0).toFixed(1)} (weight allows ${r.passes_by_weight}, volume allows ${r.passes_by_volume}). ${r.constraint_type === 'volume' ? 'Lower-density material — truck filling up before payload reached.' : r.constraint_type === 'weight' ? 'High-density material — truck at payload before tray full.' : 'Both constraints hit simultaneously — optimal pass count.'}</div>
   </div>`;
 
   ro.innerHTML = `
@@ -3662,7 +3662,7 @@ function render() {
     <div class="alert-box info">
       <div class="alert-title">Crew brief</div>
       <div class="alert-text">
-        Excavator targets <strong>${(r.O || 0).toFixed(1)} passes</strong> per truck (cycle ${r.J.toFixed(0)}s × ${r.O} = ${(r.O * r.J / 60).toFixed(1)} min at the face).
+        Excavator targets <strong>${(r.O || 0).toFixed(1)} passes</strong> per truck (cycle ${r.J.toFixed(0)}s × ${(r.O || 0).toFixed(1)} = ${(r.O * r.J / 60).toFixed(1)} min at the face).
         Truck payload <strong>${r.payload_bcm.toFixed(1)} bcm</strong>${r.using_override ? ' (supervisor override)' : ''}.
         Each truck does <strong>${r.loads_per_truck.toFixed(0)} loads</strong> over ${r.planned_smu.toFixed(1)} SMU
         (fleet total <strong>${r.total_loads_shift.toFixed(0)} loads</strong>) to hit the shift target of <strong>${fmt(r.production_bcm, 0)} bcm</strong>.
@@ -3686,7 +3686,7 @@ function render() {
         <tr><td class="label-cell">Bucket payload bcm</td><td class="formula">G = D × E / (1 + B)</td><td style="text-align:right;">${r.G.toFixed(2)}</td><td class="formula">bcm</td></tr>
         <tr><td class="label-cell">Bucket payload tonnes</td><td class="formula">H = G × A</td><td style="text-align:right;">${r.H.toFixed(1)}</td><td class="formula">t</td></tr>
         <tr><td class="label-cell">Adjusted dig cycle</td><td class="formula">J × dig-condition factor</td><td style="text-align:right;">${r.J.toFixed(1)}</td><td class="formula">sec</td></tr>
-        <tr><td class="label-cell">Passes per truck</td><td class="formula">O = min(L/H, N/F)</td><td style="text-align:right;">${r.O}</td><td class="formula">passes</td></tr>
+        <tr><td class="label-cell">Passes per truck</td><td class="formula">O = min(L/H, N/F)</td><td style="text-align:right;">${(r.O || 0).toFixed(1)}</td><td class="formula">passes</td></tr>
         <tr><td class="label-cell">Loading cycle W</td><td class="formula">T + U + V</td><td style="text-align:right;">${r.W.toFixed(0)}</td><td class="formula">sec/truck</td></tr>
         <tr><td class="label-cell">Loads/hr (X)</td><td class="formula">3600 / W</td><td style="text-align:right;">${r.X.toFixed(1)}</td><td class="formula">loads/hr</td></tr>
         <tr><td class="label-cell">Calculated payload</td><td class="formula">O × G</td><td style="text-align:right;${r.using_override ? 'color:var(--text2);text-decoration:line-through;' : ''}">${r.payload_bcm_calculated.toFixed(1)}</td><td class="formula">bcm/truck</td></tr>
