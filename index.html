@@ -1120,7 +1120,7 @@ const EXCAVATORS = {
   "EX0014": {
     name: "CAT 6040 (GPS)",
     class_label: "400T",
-    bucket_lcm: 23.0,
+    bucket_lcm: 19.0,    // v2.3.4 — 6040 production bucket per Stevie field
     dig_cycle_sec_base: 30,        // from LHEX 400t sheet
     bench_height_m: 4.5,
     rate_per_hr: 900,
@@ -1132,7 +1132,7 @@ const EXCAVATORS = {
   "EX3007": {
     name: "Ex2500 Excavator (GPS)",
     class_label: "250T",
-    bucket_lcm: 17.0,              // calibrated against 840 bcm/SMU target with 785 fleet
+    bucket_lcm: 15.0,              // v2.3.4 — calibrated to 5 passes for 785 + topsoil (60 bcm match) — was 17 lcm
     dig_cycle_sec_base: 30,
     bench_height_m: 4.0,
     rate_per_hr: 430,
@@ -1302,10 +1302,10 @@ const OPERATOR_RATES_DEFAULT = {
 const MATERIAL_TYPES = {
   // v1.8.2 — heap = effective tray volume as multiple of SAE 2:1.
   // Light/loose material heaps higher; dense rock doesn't heap.
-  topsoil:        { name: "Topsoil",              density: 1.50,  swell: 0.25, heap: 1.00 },
-  ob_weathered:   { name: "OB — Weathered",       density: 1.95,  swell: 0.30, heap: 1.00 },
+  topsoil:        { name: "Topsoil",              density: 1.50,  swell: 0.25, heap: 0.91 },  // v2.3.4 — operator spill margin built into effective tray
+  ob_weathered:   { name: "OB — Weathered",       density: 1.95,  swell: 0.30, heap: 0.93 },
   ob_light:       { name: "OB — Lower density",   density: 2.022, swell: 0.35, heap: 1.08 },
-  ob_mean:        { name: "OB — Mean density",    density: 2.295, swell: 0.35, heap: 1.00 },
+  ob_mean:        { name: "OB — Mean density",    density: 2.295, swell: 0.35, heap: 0.95 },
   ob_heavy:       { name: "OB — Upper density",   density: 2.565, swell: 0.35, heap: 1.05 },
   ob_fresh:       { name: "OB — Fresh / unweathered", density: 2.50, swell: 0.40, heap: 1.05 },
   rock_blasted:   { name: "Rock — blasted hard",  density: 2.65,  swell: 0.40, heap: 1.03 },
