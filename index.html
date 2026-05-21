@@ -1209,7 +1209,8 @@ const EXCAVATORS = {
     dig_cycle_sec_base: 30,        // from LHEX 400t sheet
     bench_height_m: 4.5,
     rate_per_hr: 900,
-    fuel_lph: 250,                 // L/hr — Cat 6040 typical
+    fuel_lph: 285,                 // v2.5.2.1 — Cat 6040 rated peak (was 250, partial derate)
+    fuel_load_factor: 0.65,        // v2.5.2.1 — HCOC dig conditions duty cycle
     smu_trigger: 9.8,
     tier: 1,
     notes: "Largest in fleet — prime production"
@@ -1221,7 +1222,8 @@ const EXCAVATORS = {
     dig_cycle_sec_base: 30,
     bench_height_m: 4.0,
     rate_per_hr: 430,
-    fuel_lph: 160,                 // L/hr — 250T class typical
+    fuel_lph: 220,                 // v2.5.2.1 — EX2500 Cat rated peak (was 160, partial derate)
+    fuel_load_factor: 0.65,        // v2.5.2.1 — HCOC dig conditions duty cycle
     smu_trigger: 9.8,
     tier: 1,
     notes: "250T class — typical target 840 bcm/SMU, marked max ~900"
@@ -1233,7 +1235,8 @@ const EXCAVATORS = {
     dig_cycle_sec_base: 22,
     bench_height_m: 2.5,
     rate_per_hr: 105,
-    fuel_lph: 22,
+    fuel_lph: 30,                  // v2.5.2.1 — 30T Cat rated peak (was 22)
+    fuel_load_factor: 0.65,        // v2.5.2.1 — HCOC dig conditions duty cycle
     smu_trigger: 9.0,
     tier: 2,
     notes: "Drain / minor work"
@@ -1249,7 +1252,8 @@ const TRUCK_CLASSES = {
     payload_t: 218,
     tray_lcm_2to1: 130,
     rate_per_hr: 335,
-    fuel_lph: 280,
+    fuel_lph: 280,                 // v2.5.2.1 — Cat rated peak (no change, was already at peak)
+    fuel_load_factor: 0.65,        // v2.5.2.1 — 65% duty cycle per HCOC tracker
     smu_trigger: 9.8,
     gmw_loaded_kg: 386000, gmw_empty_kg: 165000,   // typical 793F
     hp_grade: 2050,                                  // ~85% of 2415 gross HP (1801 kW)
@@ -1262,7 +1266,8 @@ const TRUCK_CLASSES = {
     payload_t: 181,
     tray_lcm_2to1: 106,
     rate_per_hr: 255,
-    fuel_lph: 220,
+    fuel_lph: 215,                 // v2.5.2.1 — Cat rated peak (was 220, trivial adjust)
+    fuel_load_factor: 0.65,        // v2.5.2.1 — 65% duty cycle per HCOC tracker
     smu_trigger: 9.8,
     gmw_loaded_kg: 317000, gmw_empty_kg: 136000,
     hp_grade: 1610,
@@ -1275,7 +1280,8 @@ const TRUCK_CLASSES = {
     payload_t: 140,
     tray_lcm_2to1: 78,
     rate_per_hr: 185,
-    fuel_lph: 110,
+    fuel_lph: 145,                 // v2.5.2.1 — Cat rated peak (was 110, partial derate)
+    fuel_load_factor: 0.65,        // v2.5.2.1 — 65% duty cycle per HCOC tracker
     smu_trigger: 9.8,
     gmw_loaded_kg: 249000, gmw_empty_kg: 109000,
     hp_grade: 1140,
@@ -1288,7 +1294,8 @@ const TRUCK_CLASSES = {
     payload_t: 95,
     tray_lcm_2to1: 60,
     rate_per_hr: 165,
-    fuel_lph: 70,
+    fuel_lph: 95,                  // v2.5.2.1 — Cat rated peak (was 70, partial derate)
+    fuel_load_factor: 0.65,        // v2.5.2.1 — 65% duty cycle per HCOC tracker
     smu_trigger: 9.8,
     gmw_loaded_kg: 166000, gmw_empty_kg: 71000,
     hp_grade: 860,
@@ -1301,7 +1308,8 @@ const TRUCK_CLASSES = {
     payload_t: 55,
     tray_lcm_2to1: 36,
     rate_per_hr: 140,
-    fuel_lph: 45,
+    fuel_lph: 65,                  // v2.5.2.1 — Cat rated peak (was 45, partial derate)
+    fuel_load_factor: 0.65,        // v2.5.2.1 — 65% duty cycle per HCOC tracker
     smu_trigger: 9.8,
     gmw_loaded_kg: 99000, gmw_empty_kg: 46000,
     hp_grade: 635,
@@ -1317,55 +1325,55 @@ const TRUCK_CLASSES = {
 const ANCILLARY_FLEET = {
   floor_dozer: {
     name: "Floor Dozer", default_plant_id: "DZ4012", default_plant_label: "CAT D10",
-    rate_per_hr: 200, fuel_lph: 85,
+    rate_per_hr: 200, fuel_lph: 85, fuel_load_factor: 0.70,
     default_active: true, default_util: 0.80,
     needs_operator: true,
     role: "Keep dig face clean — supports excavator productivity",
     // v1.8 — selectable model. spread_rate is per dozer model in bcm/hr (for dump-dozer bottleneck check)
     model_options: {
-      D11: { label: "CAT D11", rate_per_hr: 260, fuel_lph: 105, spread_rate_bcm_hr: 900 },
-      D10: { label: "CAT D10", rate_per_hr: 200, fuel_lph: 85,  spread_rate_bcm_hr: 600 },
-      D9:  { label: "CAT D9",  rate_per_hr: 150, fuel_lph: 70,  spread_rate_bcm_hr: 400 },
+      D11: { label: "CAT D11", rate_per_hr: 260, fuel_lph: 105, fuel_load_factor: 0.70, spread_rate_bcm_hr: 900 },
+      D10: { label: "CAT D10", rate_per_hr: 200, fuel_lph: 85,  fuel_load_factor: 0.70, spread_rate_bcm_hr: 600 },
+      D9:  { label: "CAT D9",  rate_per_hr: 150, fuel_lph: 70,  fuel_load_factor: 0.70, spread_rate_bcm_hr: 400 },
     },
     default_model: "D10",
   },
   dump_dozer: {
     name: "Dump Dozer", default_plant_id: "DZ4231", default_plant_label: "CAT D10",
-    rate_per_hr: 200, fuel_lph: 85,
+    rate_per_hr: 200, fuel_lph: 85, fuel_load_factor: 0.70,
     default_active: true, default_util: 0.80,
     needs_operator: true,
     role: "Maintain dump face and tip-head",
     model_options: {
-      D11: { label: "CAT D11", rate_per_hr: 260, fuel_lph: 105, spread_rate_bcm_hr: 900 },
-      D10: { label: "CAT D10", rate_per_hr: 200, fuel_lph: 85,  spread_rate_bcm_hr: 600 },
-      D9:  { label: "CAT D9",  rate_per_hr: 150, fuel_lph: 70,  spread_rate_bcm_hr: 400 },
+      D11: { label: "CAT D11", rate_per_hr: 260, fuel_lph: 105, fuel_load_factor: 0.70, spread_rate_bcm_hr: 900 },
+      D10: { label: "CAT D10", rate_per_hr: 200, fuel_lph: 85,  fuel_load_factor: 0.70, spread_rate_bcm_hr: 600 },
+      D9:  { label: "CAT D9",  rate_per_hr: 150, fuel_lph: 70,  fuel_load_factor: 0.70, spread_rate_bcm_hr: 400 },
     },
     default_model: "D10",
   },
   water_cart: {
     name: "Water Cart", default_plant_id: "WC2013", default_plant_label: "Heavy Rigid",
-    rate_per_hr: 145, fuel_lph: 35,
+    rate_per_hr: 145, fuel_lph: 35, fuel_load_factor: 0.45,
     default_active: true, default_util: 0.80,
     needs_operator: true,
     role: "Dust suppression on haul road and dig face"
   },
   grader: {
     name: "Grader", default_plant_id: "GD7178", default_plant_label: "CAT 16M",
-    rate_per_hr: 135, fuel_lph: 40,
+    rate_per_hr: 135, fuel_lph: 40, fuel_load_factor: 0.50,
     default_active: false, default_util: 0.50,
     needs_operator: true,
     role: "Haul road maintenance — preserves rolling resistance"
   },
   loader: {
     name: "Loader", default_plant_id: "IT5127", default_plant_label: "CAT IT38G",
-    rate_per_hr: 90, fuel_lph: 20,
+    rate_per_hr: 90, fuel_lph: 20, fuel_load_factor: 0.55,
     default_active: false, default_util: 0.30,
     needs_operator: true,
     role: "Stockpile / utility loading"
   },
   light_vehicle: {
     name: "Light Vehicle", default_plant_id: "LV514", default_plant_label: "Supervisor",
-    rate_per_hr: 9.17, fuel_lph: 5,  // $110/day ÷ 12 = $9.17/hr
+    rate_per_hr: 9.17, fuel_lph: 5, fuel_load_factor: 0.30,  // $110/day ÷ 12 = $9.17/hr
     default_active: true, default_util: 1.00,
     needs_operator: false,
     role: "Supervisor / safety vehicle"
@@ -1449,27 +1457,27 @@ const SCRAPER_CLASSES = {
   //   turn_sec           — turn-around / re-enter cut both ends combined
   //   dozer_service_sec  — full dozer-cut occupancy per scraper (engage→push-load→disengage) for queue calc
   "631": { label_short: "631", label: "CAT 631 (single-engine)", engines: 1, hp_grade: 270, gmw_empty_kg: 50000,  gmw_loaded_kg: 83000,  v_max_kmh: 57,
-           payload_bcm: 18, payload_t: 33, fuel_lph: 95,  rate_per_hr: 480, push_required: "D10", push_pull_capable: false,
+           payload_bcm: 18, payload_t: 33, fuel_lph: 95,  fuel_load_factor: 0.70, rate_per_hr: 480, push_required: "D10", push_pull_capable: false,
            spot_lock_sec: 10, load_sec_dozer: 40, load_sec_pp: null, swap_release_sec: 5,
            spread_sec: 22, turn_sec: 30, dozer_service_sec: 55 },
   "637": { label_short: "637", label: "CAT 637 (tandem, P/P)",   engines: 2, hp_grade: 600, gmw_empty_kg: 55000,  gmw_loaded_kg: 89000,  v_max_kmh: 55,
-           payload_bcm: 18, payload_t: 34, fuel_lph: 170, rate_per_hr: 560, push_required: "D11", push_pull_capable: true,
+           payload_bcm: 18, payload_t: 34, fuel_lph: 170, fuel_load_factor: 0.70, rate_per_hr: 560, push_required: "D11", push_pull_capable: true,
            spot_lock_sec: 12, load_sec_dozer: 35, load_sec_pp: 30, swap_release_sec: 8,
            spread_sec: 22, turn_sec: 30, dozer_service_sec: 50 },
   "651": { label_short: "651", label: "CAT 651 (single-engine)", engines: 1, hp_grade: 420, gmw_empty_kg: 64000,  gmw_loaded_kg: 108000, v_max_kmh: 58,
-           payload_bcm: 24, payload_t: 44, fuel_lph: 105, rate_per_hr: 620, push_required: "D10", push_pull_capable: false,
+           payload_bcm: 24, payload_t: 44, fuel_lph: 105, fuel_load_factor: 0.70, rate_per_hr: 620, push_required: "D10", push_pull_capable: false,
            spot_lock_sec: 10, load_sec_dozer: 45, load_sec_pp: null, swap_release_sec: 5,
            spread_sec: 28, turn_sec: 30, dozer_service_sec: 60 },
   "657": { label_short: "657", label: "CAT 657 (tandem, P/P)",   engines: 2, hp_grade: 660, gmw_empty_kg: 75000,  gmw_loaded_kg: 122000, v_max_kmh: 55,
-           payload_bcm: 24, payload_t: 47, fuel_lph: 190, rate_per_hr: 720, push_required: "D11", push_pull_capable: true,
+           payload_bcm: 24, payload_t: 47, fuel_lph: 190, fuel_load_factor: 0.70, rate_per_hr: 720, push_required: "D11", push_pull_capable: true,
            spot_lock_sec: 12, load_sec_dozer: 40, load_sec_pp: 35, swap_release_sec: 8,
            spread_sec: 28, turn_sec: 30, dozer_service_sec: 55 }
 };
 
 // v2.5 — Push dozer rates mirror ANCILLARY_FLEET (D10/D11). 1 D10 supports up to 3 single-engine scrapers (cycle-shared).
 const PUSH_DOZER_CLASSES = {
-  D10: { label: "CAT D10 (push)", rate_per_hr: 200, fuel_lph: 85,  supports_scrapers: 3 },
-  D11: { label: "CAT D11 (push)", rate_per_hr: 260, fuel_lph: 105, supports_scrapers: 2 }
+  D10: { label: "CAT D10 (push)", rate_per_hr: 200, fuel_lph: 85,  fuel_load_factor: 0.70, supports_scrapers: 3 },
+  D11: { label: "CAT D11 (push)", rate_per_hr: 260, fuel_lph: 105, fuel_load_factor: 0.70, supports_scrapers: 2 }
 };
 
 // v1.4 — dump times calibrated to Cat Handbook reference (1.0-1.2 min typical dump maneuver + dump)
@@ -1601,6 +1609,10 @@ const STATE = {
   fuel_charged_to_project: false,
   // v1.4.1 — Dozer bottleneck check
   dozer_spread_rate_bcm_hr: 600,    // dump dozer's spread capacity, BCM/hr
+  // v2.5.2 — Global fuel load-factor multiplier (1.0 = use per-class LF as-is).
+  // Tune below 1.0 if site conditions burn lighter than Cat duty-cycle baseline;
+  // above 1.0 (e.g. 1.10) if site conditions are harsher (high altitude, hot ambient, hard digging).
+  global_fuel_lf_multiplier: 1.0,
   // v2.4 — Schedule-driven optimiser mode + secondary haul band (for redirecting spare trucks)
   optimiser_mode: 'cost',           // 'cost' (min $/bcm) or 'schedule' (max combined bcm)
   secondary_min_km: 1.0,            // lower bound of secondary haul distance band
@@ -1923,7 +1935,9 @@ function calc() {
     const throughput_per_truck_c = payload_bcm_c * (60 / t_cycle_no_queue_c);
     // Owning/operating cost per truck per shift (planned SMU)
     const truck_cost_per_unit = tc.rate_per_hr * s.planned_smu;
-    const fuel_per_unit_L = tc.fuel_lph * s.planned_smu;
+    // v2.5.2 — Apply Cat duty-cycle load factor + global multiplier
+    const _truck_lf = (tc.fuel_load_factor != null ? tc.fuel_load_factor : 0.60) * (STATE.global_fuel_lf_multiplier || 1.0);
+    const fuel_per_unit_L = tc.fuel_lph * _truck_lf * s.planned_smu;
     return {
       class: m.class, count: m.count, truck: tc,
       O: O_c, fill_pct: fill_pct_c, payload_bcm: payload_bcm_c, P: P_c, Q: Q_c, W: W_c,
@@ -2120,15 +2134,25 @@ function calc() {
 
   // 4. Fuel — L/hr × hours active × $/L
   // Excavator and trucks burn during SMU. Ancillaries burn during shift_total_hours × utilisation.
-  const fuel_exc_L   = exc.fuel_lph * planned_smu;
+  // v2.5.2 — Apply Cat duty-cycle load factor + global multiplier
+  const _exc_lf = (exc.fuel_load_factor != null ? exc.fuel_load_factor : 0.75) * (STATE.global_fuel_lf_multiplier || 1.0);
+  const fuel_exc_L   = exc.fuel_lph * _exc_lf * planned_smu;
   // v1.8 — sum per-class truck fuel from class_metrics
   const fuel_trucks_L = class_metrics.reduce((sum, c) => sum + c.total_fuel_L, 0);
   let fuel_anc_L = 0;
-  ancillary_breakdown.forEach(a => { fuel_anc_L += a.def.fuel_lph * a.hours_used; });
+  // v2.5.2 — Each ancillary uses its own LF (graders/water carts run lower than dozers)
+  ancillary_breakdown.forEach(a => {
+    const _anc_lf = (a.def.fuel_load_factor != null ? a.def.fuel_load_factor : 0.55) * (STATE.global_fuel_lf_multiplier || 1.0);
+    fuel_anc_L += a.def.fuel_lph * _anc_lf * a.hours_used;
+  });
   const total_fuel_L = fuel_exc_L + fuel_trucks_L + fuel_anc_L;
   // Total fuel burn rate per hour (across all active equipment) — for the headline metric
-  const total_fuel_lph = exc.fuel_lph + class_metrics.reduce((sum, c) => sum + c.truck.fuel_lph * c.count, 0) +
-    ancillary_breakdown.reduce((sum, a) => sum + (a.def.fuel_lph * a.cfg.utilisation), 0);
+  // v2.5.2 — total_fuel_lph reflects effective (LF-adjusted) burn so display matches consumption
+  const _gm = STATE.global_fuel_lf_multiplier || 1.0;
+  const _exc_eff_lph = exc.fuel_lph * (exc.fuel_load_factor != null ? exc.fuel_load_factor : 0.75) * _gm;
+  const _trk_eff_lph = class_metrics.reduce((sum, c) => sum + c.truck.fuel_lph * (c.truck.fuel_load_factor != null ? c.truck.fuel_load_factor : 0.60) * _gm * c.count, 0);
+  const _anc_eff_lph = ancillary_breakdown.reduce((sum, a) => sum + (a.def.fuel_lph * (a.def.fuel_load_factor != null ? a.def.fuel_load_factor : 0.55) * _gm * a.cfg.utilisation), 0);
+  const total_fuel_lph = _exc_eff_lph + _trk_eff_lph + _anc_eff_lph;
   // v1.4.1: fuel only contributes to project cost when charged_to_project flag is set
   const cost_fuel_raw = total_fuel_L * s.diesel_price;       // always computed for moat / reference
   const cost_fuel = s.fuel_charged_to_project ? cost_fuel_raw : 0;
@@ -3256,7 +3280,9 @@ function _scraperClassMetrics(scraperClass, count, scope, isPushPullPair) {
   const dozer_service_per_hr = 3600 / cfg.dozer_service_sec;
   // Cost & fuel per scraper per shift
   const cost_per_scraper = cfg.rate_per_hr * scope.planned_smu;
-  const fuel_per_scraper_L = cfg.fuel_lph * scope.planned_smu;
+  // v2.5.2 — Apply Cat duty-cycle load factor + global multiplier
+  const _scr_lf = (cfg.fuel_load_factor != null ? cfg.fuel_load_factor : 0.70) * (STATE.global_fuel_lf_multiplier || 1.0);
+  const fuel_per_scraper_L = cfg.fuel_lph * _scr_lf * scope.planned_smu;
   return {
     class: scraperClass, label: cfg.label, label_short: cfg.label_short,
     count, isPushPullPair, mode_label,
@@ -3327,7 +3353,12 @@ function calcScraper() {
   // Push dozer attachment + cost
   const { pushers, detail } = attachPushDozers(mix);
   const push_cost = (pushers.D10 * PUSH_DOZER_CLASSES.D10.rate_per_hr + pushers.D11 * PUSH_DOZER_CLASSES.D11.rate_per_hr) * scraper_smu;
-  const push_fuel_L = (pushers.D10 * PUSH_DOZER_CLASSES.D10.fuel_lph + pushers.D11 * PUSH_DOZER_CLASSES.D11.fuel_lph) * scraper_smu;
+  // v2.5.2 — Push dozers run heavy push duty cycle (LF 0.70)
+  const _pd_gm = STATE.global_fuel_lf_multiplier || 1.0;
+  const push_fuel_L = (
+    pushers.D10 * PUSH_DOZER_CLASSES.D10.fuel_lph * (PUSH_DOZER_CLASSES.D10.fuel_load_factor || 0.70) * _pd_gm +
+    pushers.D11 * PUSH_DOZER_CLASSES.D11.fuel_lph * (PUSH_DOZER_CLASSES.D11.fuel_load_factor || 0.70) * _pd_gm
+  ) * scraper_smu;
   // v2.5.0a — DOZER QUEUE / MATCH FACTOR for single-engine scrapers.
   // For each single-engine class (631, 651), all N scrapers compete for the assigned dozers.
   // Dozer total service rate (loads/hr) = sum across attached dozers serving this class.
@@ -4926,8 +4957,8 @@ function render() {
         ` : ''}
 
         <tr><td colspan="3" style="font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:0.08em;font-size:10px;color:var(--text2);padding-top:8px;">Fuel — L/hr × hours × ${fmtMoney(STATE.diesel_price, 2)}/L ${STATE.fuel_charged_to_project ? '<span style="color:var(--ochre);">· CHARGED TO PROJECT</span>' : '<span style="color:var(--green);">· FREE-ISSUED (not in shift cost)</span>'}</td></tr>
-        <tr><td class="label-cell">Excavator (${r.exc.fuel_lph} L/hr)</td><td style="text-align:right;">${fmt(r.fuel_exc_L, 0)} L</td><td style="text-align:right;" class="${STATE.fuel_charged_to_project ? 'cost' : ''}" ${STATE.fuel_charged_to_project ? '' : 'style="color:var(--text2);"'}>${fmtMoney(r.fuel_exc_L * STATE.diesel_price, 0)}</td></tr>
-        <tr><td class="label-cell">${STATE.truck_count} × truck (${r.truck.fuel_lph} L/hr)</td><td style="text-align:right;">${fmt(r.fuel_trucks_L, 0)} L</td><td style="text-align:right;" class="${STATE.fuel_charged_to_project ? 'cost' : ''}" ${STATE.fuel_charged_to_project ? '' : 'style="color:var(--text2);"'}>${fmtMoney(r.fuel_trucks_L * STATE.diesel_price, 0)}</td></tr>
+        <tr><td class="label-cell">Excavator (${r.exc.fuel_lph} L/hr rated × LF ${(r.exc.fuel_load_factor || 0.75).toFixed(2)})</td><td style="text-align:right;">${fmt(r.fuel_exc_L, 0)} L</td><td style="text-align:right;" class="${STATE.fuel_charged_to_project ? 'cost' : ''}" ${STATE.fuel_charged_to_project ? '' : 'style="color:var(--text2);"'}>${fmtMoney(r.fuel_exc_L * STATE.diesel_price, 0)}</td></tr>
+        <tr><td class="label-cell">${STATE.truck_count} × truck (${r.truck.fuel_lph} L/hr rated × LF ${(r.truck.fuel_load_factor || 0.60).toFixed(2)})</td><td style="text-align:right;">${fmt(r.fuel_trucks_L, 0)} L</td><td style="text-align:right;" class="${STATE.fuel_charged_to_project ? 'cost' : ''}" ${STATE.fuel_charged_to_project ? '' : 'style="color:var(--text2);"'}>${fmtMoney(r.fuel_trucks_L * STATE.diesel_price, 0)}</td></tr>
         ${r.fuel_anc_L > 0 ? `<tr><td class="label-cell">Ancillaries</td><td style="text-align:right;">${fmt(r.fuel_anc_L, 0)} L</td><td style="text-align:right;" class="${STATE.fuel_charged_to_project ? 'cost' : ''}" ${STATE.fuel_charged_to_project ? '' : 'style="color:var(--text2);"'}>${fmtMoney(r.fuel_anc_L * STATE.diesel_price, 0)}</td></tr>` : ''}
         <tr><td class="label-cell" style="color:var(--text1);"><em>Fuel subtotal — ${fmt(r.total_fuel_L, 0)} L (${fmt(r.total_fuel_lph, 0)} L/hr)</em></td><td></td><td style="text-align:right;color:var(--text1);"><em>${fmtMoney(r.cost_fuel, 0)}${STATE.fuel_charged_to_project ? '' : ' (ref ' + fmtMoney(r.cost_fuel_raw, 0) + ')'}</em></td></tr>
 
